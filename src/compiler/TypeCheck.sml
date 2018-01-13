@@ -103,6 +103,44 @@ structure TypeCheck : TYPE_CHECK =
     and checkFieldPat((_, pat), env) = checkPat(env, pat)
 
     (*
+     * DATATYPE and EXCEPTION declarations
+     *)
+
+    fun checkConBinds([], _, env) = env
+      | checkConBinds((vid, tyOpt) :: conbinds, mkis, env) =
+	(* TODO:
+	 * - check vid may be bound (not bound in env, not forbidden)
+	 * - elaborate tyOpt and record that too
+	 *)
+	let val hasarg = case tyOpt of SOME _ => true
+				    |  NONE => false
+	in
+	  checkConBinds(conbinds, mkis, bindVid(env, vid,  mkis hasarg))
+	end
+
+    fun checkDatBinds([], _, env) = env
+      | checkDatBinds((_, _, Absyn.CONBIND conbinds) :: datbinds, mkis, env) =
+	(* TODO:
+	 * - check tycon may be bound
+	 * - compute equality attribute
+	 * - record tycon in TE
+	 *)
+	checkDatBinds(datbinds, mkis, checkConBinds(conbinds, mkis, env))
+
+    fun checkExBind(exb, env) =
+      case exb
+       of Absyn.CONexb vid => bindVid(env, vid, Basis.EXN false)
+	| Absyn.OFexb(vid, _) => bindVid(env, vid, Basis.EXN true)
+	| Absyn.EQexb(vid, longvid) =>
+	  case lookupLongVid(env, longvid)
+	   of idstatus as Basis.EXN _ => bindVid(env, vid, idstatus)
+	    | _ => error "exception aliasing non-exception"
+
+    fun checkExBinds([], env) = env
+      | checkExBinds(exb :: exbinds, env) =
+	checkExBinds(exbinds, checkExBind(exb, env))
+
+    (*
      * EXPRESSIONS
      *)
 
@@ -130,7 +168,11 @@ structure TypeCheck : TYPE_CHECK =
     and checkLetDec(dec, env) =
       case dec
        of Absyn.VALdec(_, nonrecs, recs) => checkLetRecs(recs, checkLetNonRecs(nonrecs, env))
-	| _ => nyi "type, exception, local, or open form of <dec> in LET"
+	| Absyn.TYPEdec _ => env
+	| Absyn.DATATYPEdec(Absyn.DATBIND datbinds, _) => checkDatBinds(datbinds, Basis.CON, env)
+	| Absyn.DATAREPLdec _ => env
+	| Absyn.EXdec exbinds => checkExBinds(exbinds, env)
+	| _ => nyi "abstype, local, or open form of <dec> in LET"
 
     and checkLetNonRecs([], env) = env
       | checkLetNonRecs((pat, exp) :: nonrecs, env) =
@@ -160,27 +202,6 @@ structure TypeCheck : TYPE_CHECK =
 	 * - elaborate ty and record that too
 	 *)
 	checkValSpecs(valspecs, bindVid(env, vid, Basis.VAL))
-
-    fun checkConBinds([], _, env) = env
-      | checkConBinds((vid, tyOpt) :: conbinds, mkis, env) =
-	(* TODO:
-	 * - check vid may be bound (not bound in env, not forbidden)
-	 * - elaborate tyOpt and record that too
-	 *)
-	let val hasarg = case tyOpt of SOME _ => true
-				    |  NONE => false
-	in
-	  checkConBinds(conbinds, mkis, bindVid(env, vid,  mkis hasarg))
-	end
-
-    fun checkDatBinds([], _, env) = env
-      | checkDatBinds((_, _, Absyn.CONBIND conbinds) :: datbinds, mkis, env) =
-	(* TODO:
-	 * - check tycon may be bound
-	 * - compute equality attribute
-	 * - record tycon in TE
-	 *)
-	checkDatBinds(datbinds, mkis, checkConBinds(conbinds, mkis, env))
 
     fun checkSpec(spec, env) =
       case spec
@@ -240,19 +261,6 @@ structure TypeCheck : TYPE_CHECK =
     (*
      * STRUCTURES
      *)
-
-    fun checkExBind(exb, env) =
-      case exb
-       of Absyn.CONexb vid => bindVid(env, vid, Basis.EXN false)
-	| Absyn.OFexb(vid, _) => bindVid(env, vid, Basis.EXN true)
-	| Absyn.EQexb(vid, longvid) =>
-	  case lookupLongVid(env, longvid)
-	   of idstatus as Basis.EXN _ => bindVid(env, vid, idstatus)
-	    | _ => error "exception aliasing non-exception"
-
-    fun checkExBinds([], env) = env
-      | checkExBinds(exb :: exbinds, env) =
-	checkExBinds(exbinds, checkExBind(exb, env))
 
     fun checkDec(dec, env) =
       case dec
