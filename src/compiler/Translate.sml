@@ -162,7 +162,11 @@ structure Translate : TRANSLATE =
     and transLetDec(dec, body) =
       case dec
        of Absyn.VALdec(_, nonrecs, recs) => transLetVal(nonrecs, transLetRec(recs, body))
-	| _ => nyi "type, exception, local, or open form of <dec> in LET"
+	| Absyn.TYPEdec _ => body
+	| Absyn.DATATYPEdec _ => body
+	| Absyn.DATAREPLdec _ => body
+	| Absyn.EXdec _ => body (* TODO: proper SML semantics for exn con (generative, alias)? *)
+	| _ => nyi "abstype, local, or open form of <dec> in LET"
 
     and transLetVal([(pat,exp)], body) =
 	CoreErlang.E_CASE(transExp exp,
