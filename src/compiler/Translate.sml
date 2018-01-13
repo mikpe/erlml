@@ -70,10 +70,12 @@ structure Translate : TRANSLATE =
      * EXPRESSIONS
      *)
 
-    fun recbindFname(Absyn.VIDpat(Absyn.LONGID([], id), _)) = CoreErlang.FNAME(id, 1)
-      | recbindFname(_) = nyi "bad function name pattern in 'let val rec'"
+    fun recbindPatFname(Absyn.VIDpat(Absyn.LONGID([], vid), _)) = CoreErlang.FNAME(vid, 1)
+      | recbindPatFname(_) = nyi "bad function name pattern in 'val rec'"
 
-    fun mkFnameAlias((fname as CoreErlang.FNAME(id, _), _), body) =
+    fun recbindFname(pat, _) = recbindPatFname pat
+
+    fun mkFnameAlias(fname as CoreErlang.FNAME(id, _), body) =
       CoreErlang.E_LET(id, CoreErlang.E_FNAME fname, body)
 
     fun mkCall(m, f, args) =
@@ -177,18 +179,19 @@ structure Translate : TRANSLATE =
       | transLetVal(_, _) = nyi "multiple bindings in 'let val'"
 
     and transLetRec(recs, body) =
-      let val fundefs = List.map transOneRecBind recs
+      let val fnames = List.map recbindFname recs
       in
-	CoreErlang.E_LETREC(List.map transOneRecBind recs,
-			    List.foldl mkFnameAlias body fundefs)
+	CoreErlang.E_LETREC(List.map (transOneRecBind fnames) recs,
+			    List.foldl mkFnameAlias body fnames)
       end
 
-    and transOneRecBind(pat, match) =
-      let val fname = recbindFname pat
+    and transOneRecBind fnames (pat, match) =
+      let val fname = recbindPatFname pat
 	  val var = CoreErlang.mkVar NONE
 	  val default = callErlmlRuntime("raise_match", [])
+	  val body = transMatch(var, match, default)
       in
-	(fname, CoreErlang.FUN([var], transMatch(var, match, default)))
+	(fname, CoreErlang.FUN([var], List.foldl mkFnameAlias body fnames))
       end
 
     (*
