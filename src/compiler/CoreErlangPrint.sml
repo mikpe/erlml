@@ -161,8 +161,8 @@ structure CoreErlangPrint : CORE_ERLANG_PRINT =
 	| CoreErlang.E_CASE(e, cs) =>
 	  (TextIO.output(os, "case ");
 	   prExpr(os, e);
-	   TextIO.output(os, " of ");
-	   List.app (fn(p, e) => (prPat(os, p); TextIO.output(os, " when 'true' -> "); prExpr(os, e))) cs;
+	   TextIO.output(os, " of");
+	   List.app (fn(p, e) => (TextIO.output1(os, #" "); prPat(os, p); TextIO.output(os, " when 'true' -> "); prExpr(os, e))) cs;
 	   TextIO.output(os, " end"))
 	| CoreErlang.E_TRY(e1, v1, e2, cv1, cv2, cv3, ce) =>
 	  (TextIO.output(os, "try ");
