@@ -34,35 +34,50 @@ structure TypeCheck : TYPE_CHECK =
      * PATTERNS
      *)
 
-    fun lookupLongVid'(Basis.E(_, Basis.VE dict), [], vid) = Dict.find(dict, vid)
-      | lookupLongVid'(Basis.E(Basis.SE dict, _), strid :: strids, vid) =
-	lookupLongVid'(valOf(Dict.find(dict, strid)), strids, vid)
+    fun unbound(kind, strids, id) =
+      error("unbound " ^ kind ^ " " ^ String.concatWith "." (strids @ [id]))
+    fun unboundVid(strids, vid) = unbound("vid", strids, vid)
+    fun unboundStrId(strids, strid) = unbound("strid", strids, strid)
+
+    fun lookupLongVid'(Basis.E(_, Basis.VE dict), revpfx, [], vid) =
+        (case Dict.find(dict, vid)
+	  of SOME idstatus => idstatus
+	   | NONE => unboundVid(List.rev revpfx, vid))
+      | lookupLongVid'(Basis.E(Basis.SE dict, _), revpfx, strid :: strids, vid) =
+	case Dict.find(dict, strid)
+	 of SOME env => lookupLongVid'(env, strid :: revpfx, strids, vid)
+	  | NONE => unboundStrId(List.rev revpfx, strid)
 
     (* For a short VId we look it up first in the current Env, and then in the initial Basis.
        For a long VId, we look up the first StrId first in the current Env, then in the
        initial Basis, and lastly from a .basis file.  The resulting Env is then used to
        look up subsequent StrIds and finally the VId. *)
 
-    fun lookupLongVid(Basis.E(_, Basis.VE dict), Absyn.LONGID([], vid)) =
-        (case Dict.find(dict, vid)
-	  of NONE =>
-	     let val Basis.BASIS(_, Basis.E(_, Basis.VE dict)) = Basis.initialBasis
-	     in
-	       Dict.find(dict, vid)
-	     end
-	   | sth => sth)
+    fun lookupVid'(Basis.E(_, Basis.VE dict), vid) =
+      case Dict.find(dict, vid)
+       of NONE =>
+	  let val Basis.BASIS(_, Basis.E(_, Basis.VE dict)) = Basis.initialBasis
+	  in
+	    Dict.find(dict, vid)
+	  end
+	| sth => sth
+
+    fun lookupLongVid(env, Absyn.LONGID([], vid)) =
+        (case lookupVid'(env, vid)
+	  of SOME idstatus => idstatus
+	   | NONE => unboundVid([], vid))
       | lookupLongVid(Basis.E(Basis.SE dict, _), Absyn.LONGID(strid :: strids, vid)) =
 	case Dict.find(dict, strid)
-	 of SOME env => lookupLongVid'(env, strids, vid)
+	 of SOME env => lookupLongVid'(env, [], strids, vid)
 	  | NONE =>
 	    let val Basis.BASIS(_, Basis.E(Basis.SE dict, _)) = Basis.initialBasis
 	    in
 	      case Dict.find(dict, strid)
-	       of SOME env => lookupLongVid'(env, strids, vid)
+	       of SOME env => lookupLongVid'(env, [], strids, vid)
 		| NONE =>
 		  case readBasisFile(strid, ".sml")
-		   of SOME(Basis.BASIS(_, env)) => lookupLongVid'(env, strids, vid)
-		    | NONE => NONE
+		   of SOME(Basis.BASIS(_, env)) => lookupLongVid'(env, [], strids, vid)
+		    | NONE => unboundStrId([], strid)
 	    end
 
     fun bindVid(Basis.E(strenv, Basis.VE dict), vid, idstatus) =
@@ -75,10 +90,10 @@ structure TypeCheck : TYPE_CHECK =
 	| Absyn.VIDpat(longid, refOptIdStatus) =>
 	  (case longid
 	    of Absyn.LONGID([], vid) =>
-	       (case lookupLongVid(env, longid)
+	       (case lookupVid'(env, vid)
 		 of SOME idstatus => (refOptIdStatus := SOME idstatus; env)
 		  | NONE => (refOptIdStatus := SOME Basis.VAL; bindVid(env, vid, Basis.VAL)))
-	     | _ => (refOptIdStatus := SOME(valOf(lookupLongVid(env, longid))); env))
+	     | _ => (refOptIdStatus := SOME(lookupLongVid(env, longid)); env))
 	| Absyn.RECpat(row, false) => List.foldl checkFieldPat env row
 	| Absyn.RECpat(_, true) => nyi "flexible record patterns"
 	| Absyn.CONSpat(_, pat) => checkPat(env, pat)
@@ -94,7 +109,7 @@ structure TypeCheck : TYPE_CHECK =
     fun checkExp(env, exp) =
       case exp
        of Absyn.SCONexp _ => ()
-	| Absyn.VIDexp(longid, refOptIdStatus) => refOptIdStatus := SOME(valOf(lookupLongVid(env, longid)))
+	| Absyn.VIDexp(longid, refOptIdStatus) => refOptIdStatus := SOME(lookupLongVid(env, longid))
 	| Absyn.RECexp row => List.app (checkFieldExp env) row
 	| Absyn.LETexp(Absyn.DEC decs, exp) => checkExp(checkLetDecs(decs, env), exp)
 	| Absyn.APPexp(f, arg) => (checkExp(env, f); checkExp(env, arg))
@@ -232,9 +247,8 @@ structure TypeCheck : TYPE_CHECK =
 	| Absyn.OFexb(vid, _) => bindVid(env, vid, Basis.EXN true)
 	| Absyn.EQexb(vid, longvid) =>
 	  case lookupLongVid(env, longvid)
-	   of SOME(idstatus as Basis.EXN _) => bindVid(env, vid, idstatus)
-	    | SOME _ => error "exception aliasing non-exception"
-	    | NONE => error "exception aliasing unbound identifier"
+	   of idstatus as Basis.EXN _ => bindVid(env, vid, idstatus)
+	    | _ => error "exception aliasing non-exception"
 
     fun checkExBinds([], env) = env
       | checkExBinds(exb :: exbinds, env) =
