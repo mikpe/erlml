@@ -149,7 +149,17 @@ structure TypeCheck : TYPE_CHECK =
     fun checkExp(env, exp) =
       case exp
        of Absyn.SCONexp _ => ()
-	| Absyn.VIDexp(refLongVid, refOptIdStatus) => refOptIdStatus := SOME(#2(lookupLongVid(env, !refLongVid)))
+	| Absyn.VIDexp(refLongVid, refOptIdStatus) =>
+	  let val longvid = !refLongVid
+	      val (longvidOpt, idstatus) = lookupLongVid(env, longvid)
+	      val _ = refOptIdStatus := SOME idstatus
+	  in
+	    case longvidOpt
+	     of NONE => ()
+	      | SOME longvid' =>
+		if longvid = longvid' then ()
+		else refLongVid := longvid'
+	  end
 	| Absyn.RECexp row => List.app (checkFieldExp env) row
 	| Absyn.LETexp(Absyn.DEC decs, exp) => checkExp(checkLetDecs(decs, env), exp)
 	| Absyn.APPexp(f, arg) => (checkExp(env, f); checkExp(env, arg))
