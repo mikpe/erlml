@@ -43,6 +43,19 @@ structure Basis : BASIS =
 
     val veTextIO = VE(Dict.fromList(identCompare, [("output", VAL), ("stdOut", VAL)]))
 
+    val stridPrimitive = "_ERLML_PRIMITIVE"
+    val toplevelValEnv =
+	Dict.fromList(identCompare,
+		      [ ("true", (LONGID([stridPrimitive], "true"), CON false))
+		      , ("false", (LONGID([stridPrimitive], "false"), CON false))
+		      , ("NONE", (LONGID(["Option"], "NONE"), CON false))
+		      , ("SOME", (LONGID(["Option"], "SOME"), CON true))
+		      , ("nil", (LONGID([stridPrimitive], "nil"), CON false))
+		      , ("::", (LONGID([stridPrimitive], "::"), CON true))
+		      , ("=", (LONGID([stridPrimitive], "="), VAL))
+		      , ("<", (LONGID([stridPrimitive], "<"), VAL))
+		     ])
+
     val initialSigEnv = SIGE(Dict.empty identCompare)
     val initialValEnv = VE(Dict.empty identCompare)
     val initialStrEnv = SE(Dict.fromList(identCompare, [("TextIO", E(SE(Dict.empty identCompare), veTextIO))]))
