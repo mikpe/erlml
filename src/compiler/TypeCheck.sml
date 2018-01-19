@@ -48,6 +48,20 @@ structure TypeCheck : TYPE_CHECK =
 	 of SOME env => lookupLongVid'(env, strid :: revpfx, strids, vid)
 	  | NONE => unboundStrId(List.rev revpfx, strid)
 
+    fun lookupFirstStrId(Basis.E(Basis.SE dict, _), strid) =
+      case Dict.find(dict, strid)
+       of SOME env => env
+	| NONE =>
+	  let val Basis.BASIS(_, Basis.E(Basis.SE dict, _)) = Basis.initialBasis
+	  in
+	    case Dict.find(dict, strid)
+	     of SOME env => env
+	      | NONE =>
+		case readBasisFile(strid, ".sml")
+		 of SOME(Basis.BASIS(_, env)) => env
+		  | NONE => unboundStrId([], strid)
+	  end
+
     (* For a short VId we look it up first in the current Env, and then in the initial Basis.
        For a long VId, we look up the first StrId first in the current Env, then in the
        initial Basis, and lastly from a .basis file.  The resulting Env is then used to
@@ -66,19 +80,8 @@ structure TypeCheck : TYPE_CHECK =
         (case lookupVid'(env, vid)
 	  of SOME idstatus => idstatus
 	   | NONE => unboundVid([], vid))
-      | lookupLongVid(Basis.E(Basis.SE dict, _), Absyn.LONGID(strid :: strids, vid)) =
-	case Dict.find(dict, strid)
-	 of SOME env => lookupLongVid'(env, [], strids, vid)
-	  | NONE =>
-	    let val Basis.BASIS(_, Basis.E(Basis.SE dict, _)) = Basis.initialBasis
-	    in
-	      case Dict.find(dict, strid)
-	       of SOME env => lookupLongVid'(env, [], strids, vid)
-		| NONE =>
-		  case readBasisFile(strid, ".sml")
-		   of SOME(Basis.BASIS(_, env)) => lookupLongVid'(env, [], strids, vid)
-		    | NONE => unboundStrId([], strid)
-	    end
+      | lookupLongVid(env, Absyn.LONGID(strid :: strids, vid)) =
+        lookupLongVid'(lookupFirstStrId(env, strid), [], strids, vid)
 
     fun bindVid(Basis.E(strenv, Basis.VE dict), vid, idstatus) =
       Basis.E(strenv, Basis.VE(Dict.insert(dict, vid, idstatus)))
