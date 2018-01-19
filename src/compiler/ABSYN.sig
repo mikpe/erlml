@@ -95,7 +95,7 @@ signature ABSYN =
 
     and exp
       = SCONexp of scon
-      | VIDexp of longvid * Basis.idstatus option ref
+      | VIDexp of longvid ref * Basis.idstatus option ref
       | RECexp of (label * exp) list
       | LETexp of dec * exp
       | APPexp of exp * exp

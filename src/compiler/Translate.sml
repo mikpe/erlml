@@ -109,7 +109,7 @@ structure Translate : TRANSLATE =
     fun transExp exp =
       case exp
        of Absyn.SCONexp scon => CoreErlang.E_LITERAL(transScon scon)
-	| Absyn.VIDexp(longid as Absyn.LONGID(_, vid), refOptIdStatus) =>
+	| Absyn.VIDexp(ref(longid as Absyn.LONGID(_, vid)), refOptIdStatus) =>
 	  (* TODO:
 	   * - allow for different con rep than atoms (e.g. fixnum or nil)
 	   * - proper SML semantics for exn con (generative, alias)?

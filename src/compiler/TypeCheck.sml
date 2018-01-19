@@ -147,7 +147,7 @@ structure TypeCheck : TYPE_CHECK =
     fun checkExp(env, exp) =
       case exp
        of Absyn.SCONexp _ => ()
-	| Absyn.VIDexp(longid, refOptIdStatus) => refOptIdStatus := SOME(lookupLongVid(env, longid))
+	| Absyn.VIDexp(refLongVid, refOptIdStatus) => refOptIdStatus := SOME(lookupLongVid(env, !refLongVid))
 	| Absyn.RECexp row => List.app (checkFieldExp env) row
 	| Absyn.LETexp(Absyn.DEC decs, exp) => checkExp(checkLetDecs(decs, env), exp)
 	| Absyn.APPexp(f, arg) => (checkExp(env, f); checkExp(env, arg))

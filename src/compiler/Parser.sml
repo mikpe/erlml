@@ -422,7 +422,7 @@ structure Parser : PARSER =
 				 false))
 
     fun build_infix_exp(vid, exp1, exp2) =
-      Absyn.APPexp(Absyn.VIDexp(Absyn.LONGID([], vid), ref NONE),
+      Absyn.APPexp(Absyn.VIDexp(ref(Absyn.LONGID([], vid)), ref NONE),
 		   Absyn.RECexp([(Absyn.INTlab 1, exp1), (Absyn.INTlab 2, exp2)]))
 
     fun build_list([], _, xnil) = xnil
@@ -437,15 +437,15 @@ structure Parser : PARSER =
 
     fun build_listexp exps =
       let val xcons = fn (exp1, exp2) => build_infix_exp("::", exp1, exp2)
-	  val xnil = Absyn.VIDexp(Absyn.LONGID([], "nil"), ref NONE)
+	  val xnil = Absyn.VIDexp(ref(Absyn.LONGID([], "nil")), ref NONE)
       in
 	build_list(exps, xcons, xnil)
       end
 
     fun build_case_exp(exp, match) = Absyn.APPexp(Absyn.FNexp match, exp)
 
-    fun mk_true_exp() = Absyn.VIDexp(Absyn.LONGID([], "true"), ref NONE)
-    fun mk_false_exp() = Absyn.VIDexp(Absyn.LONGID([], "false"), ref NONE)
+    fun mk_true_exp() = Absyn.VIDexp(ref(Absyn.LONGID([], "true")), ref NONE)
+    fun mk_false_exp() = Absyn.VIDexp(ref(Absyn.LONGID([], "false")), ref NONE)
 
     fun build_if_exp(exp1, exp2, exp3) =
       let val match = Absyn.MATCH([(Absyn.VIDpat(Absyn.LONGID([], "true"), ref NONE), exp2),
@@ -461,7 +461,7 @@ structure Parser : PARSER =
 
     fun build_while_exp(exp1, exp2) =
       let val vid = Absyn.LONGID([], Absyn.gensym())
-	  val appvid = Absyn.APPexp(Absyn.VIDexp(vid, ref NONE), Absyn.RECexp [])
+	  val appvid = Absyn.APPexp(Absyn.VIDexp(ref vid, ref NONE), Absyn.RECexp [])
 	  val exp = build_seq_exp(exp2, appvid)
 	  val exp = build_if_exp(exp1, exp, Absyn.RECexp [])
 	  val match = Absyn.MATCH([(Absyn.RECpat([], false), exp)])
@@ -473,7 +473,7 @@ structure Parser : PARSER =
     fun build_hashexp lab =
       let val longid = Absyn.LONGID([], Absyn.gensym())
       in
-	Absyn.FNexp(Absyn.MATCH([(Absyn.RECpat([(lab, Absyn.VIDpat(longid, ref NONE))], true), Absyn.VIDexp(longid, ref NONE))]))
+	Absyn.FNexp(Absyn.MATCH([(Absyn.RECpat([(lab, Absyn.VIDpat(longid, ref NONE))], true), Absyn.VIDexp(ref longid, ref NONE))]))
       end
 
     (*
@@ -804,7 +804,7 @@ structure Parser : PARSER =
 	    | mkvids(i, vids, row) =
 	      let val vid = Absyn.gensym()
 	      in
-		mkvids(i - 1, vid :: vids, (Absyn.INTlab i, Absyn.VIDexp(Absyn.LONGID([], vid), ref NONE)) :: row)
+		mkvids(i - 1, vid :: vids, (Absyn.INTlab i, Absyn.VIDexp(ref(Absyn.LONGID([], vid)), ref NONE)) :: row)
 	      end
 	  fun mkfn([], exp) = exp
 	    | mkfn(vid :: vids, exp) = Absyn.FNexp(Absyn.MATCH([(Absyn.VIDpat(Absyn.LONGID([], vid), ref NONE), mkfn(vids, exp))]))
@@ -1252,9 +1252,9 @@ structure Parser : PARSER =
 	    | Token.REALC r => SOME(Absyn.SCONexp(Absyn.REALsc r))
 	    | Token.STRINGC s => SOME(Absyn.SCONexp(Absyn.STRINGsc s))
 	    | Token.CHARC c => SOME(Absyn.SCONexp(Absyn.CHARsc c))
-	    | Token.OP => SOME(Absyn.VIDexp(parse_longvid_exp tokens, ref NONE))
-	    | Token.ID id => SOME(Absyn.VIDexp(Absyn.LONGID([], id), ref NONE))	(* includes STAR and EQ, excludes infix IDs *)
-	    | Token.QUALID(strids, id) => SOME(Absyn.VIDexp(Absyn.LONGID(strids, id), ref NONE))
+	    | Token.OP => SOME(Absyn.VIDexp(ref(parse_longvid_exp tokens), ref NONE))
+	    | Token.ID id => SOME(Absyn.VIDexp(ref(Absyn.LONGID([], id)), ref NONE))	(* includes STAR and EQ, excludes infix IDs *)
+	    | Token.QUALID(strids, id) => SOME(Absyn.VIDexp(ref(Absyn.LONGID(strids, id)), ref NONE))
 	    | Token.LBRACE => SOME(parse_exprow(tokens, fe))
 	    | Token.LPAREN => SOME(parse_lparen_exp(tokens, fe))
 	    | Token.LBRACK => SOME(parse_listexp(tokens, fe))
