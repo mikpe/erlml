@@ -67,7 +67,7 @@ structure TypeCheck : TYPE_CHECK =
        initial Basis, and lastly from a .basis file.  The resulting Env is then used to
        look up subsequent StrIds and finally the VId. *)
 
-    fun lookupVid'(Basis.E(_, Basis.VE dict), vid) =
+    fun lookupVid(Basis.E(_, Basis.VE dict), vid) =
       case Dict.find(dict, vid)
        of NONE =>
 	  let val Basis.BASIS(_, Basis.E(_, Basis.VE dict)) = Basis.initialBasis
@@ -77,7 +77,7 @@ structure TypeCheck : TYPE_CHECK =
 	| sth => sth
 
     fun lookupLongVid(env, Absyn.LONGID([], vid)) =
-        (case lookupVid'(env, vid)
+        (case lookupVid(env, vid)
 	  of SOME idstatus => idstatus
 	   | NONE => unboundVid([], vid))
       | lookupLongVid(env, Absyn.LONGID(strid :: strids, vid)) =
@@ -93,7 +93,7 @@ structure TypeCheck : TYPE_CHECK =
 	| Absyn.VIDpat(longid, refOptIdStatus) =>
 	  (case longid
 	    of Absyn.LONGID([], vid) =>
-	       (case lookupVid'(env, vid)
+	       (case lookupVid(env, vid)
 		 of SOME idstatus => (refOptIdStatus := SOME idstatus; env)
 		  | NONE => (refOptIdStatus := SOME Basis.VAL; bindVid(env, vid, Basis.VAL)))
 	     | _ => (refOptIdStatus := SOME(lookupLongVid(env, longid)); env))
