@@ -19,6 +19,8 @@ signature BASIS =
     type ident        = string	(* TODO: for now *)
     val identCompare  : ident * ident -> order
 
+    datatype longid   = LONGID of ident list * ident
+
     datatype idstatus = CON of bool (* hasarg? *)
 		      | EXN of bool (* hasarg? *)
 		      | VAL

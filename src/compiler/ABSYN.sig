@@ -18,8 +18,7 @@ signature ABSYN =
 
     type ident = Basis.ident
 
-    datatype longid
-      = LONGID of ident list * ident
+    datatype longid = datatype Basis.longid
 
     datatype label
       = IDlab of ident
