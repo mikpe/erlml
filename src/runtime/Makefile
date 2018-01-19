@@ -15,6 +15,7 @@
 
 MODULES=\
 	TextIO \
+	_ERLML_PRIMITIVE \
 	erlml_runtime
 
 BEAM_FILES=$(MODULES:%=%.beam)
