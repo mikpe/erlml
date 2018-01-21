@@ -34,10 +34,15 @@ structure Basis : BASIS =
 
     datatype basis    = BASIS of sigenv * env (* TODO: add FunEnv *)
 
-    val emptyEnv = E(SE(Dict.empty identCompare),
-		     VE(Dict.empty identCompare))
+    val emptyVE = VE(Dict.empty identCompare)
 
-    val emptyBasis = BASIS(SIGE(Dict.empty identCompare), emptyEnv)
+    val emptySE = SE(Dict.empty identCompare)
+
+    val emptyEnv = E(emptySE, emptyVE)
+
+    val emptySIGE = SIGE(Dict.empty identCompare)
+
+    val emptyBasis = BASIS(emptySIGE, emptyEnv)
 
     (* Initial Basis (TODO: incomplete) *)
 
@@ -56,9 +61,9 @@ structure Basis : BASIS =
 		      , ("<", (LONGID([stridPrimitive], "<"), VAL))
 		     ])
 
-    val initialSigEnv = SIGE(Dict.empty identCompare)
-    val initialValEnv = VE(Dict.empty identCompare)
-    val initialStrEnv = SE(Dict.fromList(identCompare, [("TextIO", E(SE(Dict.empty identCompare), veTextIO))]))
+    val initialSigEnv = emptySIGE
+    val initialValEnv = emptyVE
+    val initialStrEnv = SE(Dict.fromList(identCompare, [("TextIO", E(emptySE, veTextIO))]))
     val initialEnv = E(initialStrEnv, initialValEnv)
     val initialBasis = BASIS(initialSigEnv, initialEnv)
 
