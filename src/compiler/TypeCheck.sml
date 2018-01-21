@@ -103,6 +103,8 @@ structure TypeCheck : TYPE_CHECK =
     fun cPlusE(Basis.E(Basis.SE SE1, Basis.VE VE1), Basis.E(Basis.SE SE2, Basis.VE VE2)) =
       Basis.E(Basis.SE(Dict.plus(SE1, SE2)), Basis.VE(Dict.plus(VE1, VE2)))
 
+    val ePlusE = cPlusE
+
     (*
      * PATTERNS
      *)
@@ -237,7 +239,13 @@ structure TypeCheck : TYPE_CHECK =
 	  | Absyn.DATATYPEdec(datbind, _) => ePlusVE(E, checkDatBind(C, datbind))
 	  | Absyn.DATAREPLdec _ => E (* FIXME: import idstatus for ctors *)
 	  | Absyn.EXdec exbind => ePlusVE(E, checkExBind(C, exbind))
-	  | _ => nyi "abstype, local, or open form of <dec>"
+	  | Absyn.LOCALdec(dec1, dec2) =>
+	    let val E1 = checkDec(C, dec1)
+		val E2 = checkDec(cPlusE(C, E1), dec2)
+	    in
+	      ePlusE(E, E2)
+	    end
+	  | _ => nyi "abstype or open <dec>"
       end
 
     and checkValBind(C, nonrecs, recs) = (* C |- valbind => VE *)
@@ -329,8 +337,24 @@ structure TypeCheck : TYPE_CHECK =
      * STRUCTURES
      *)
 
-    fun checkModule(dec, sigid, refOptEnv, basis) =
-      let val _ = checkDec(Basis.emptyEnv, dec)
+    fun cOfB(Basis.BASIS(_, E)) = E
+
+    fun bPlusE(Basis.BASIS(SIGE, E1), E2) = Basis.BASIS(SIGE, ePlusE(E1, E2))
+
+    fun checkStrDec(B, Absyn.STRDEC[strdec]) = (* B |- strdec => E *)
+        (case strdec
+	  of Absyn.DECstrdec dec => checkDec(cOfB B, dec)
+	   | Absyn.LOCALstrdec(strdec1, strdec2) =>
+	     let val E1 = checkStrDec(B, strdec1)
+		 val E2 = checkStrDec(bPlusE(B, E1), strdec2)
+	     in
+	       E2
+	     end
+	   | _ => nyi "<strbind> form of <strdec>")
+      | checkStrDec(_, _) = nyi "non-single <strdec>"
+
+    fun checkModule(strdec, sigid, refOptEnv, basis) =
+      let val _ = checkStrDec(Basis.emptyBasis, strdec)
 	  val Basis.SIG env = checkSigid(sigid, basis)
       in
 	refOptEnv := SOME env;
@@ -339,10 +363,10 @@ structure TypeCheck : TYPE_CHECK =
 
     fun checkStrExp(strexp, basis) =
       case strexp
-       of Absyn.TRANSPARENTstrexp(Absyn.STRUCTstrexp(Absyn.STRDEC[Absyn.DECstrdec dec]), Absyn.SIGIDsigexp sigid, refOptEnv) =>
-	  checkModule(dec, sigid, refOptEnv, basis)
-	| Absyn.OPAQUEstrexp(Absyn.STRUCTstrexp(Absyn.STRDEC[Absyn.DECstrdec dec]), Absyn.SIGIDsigexp sigid, refOptEnv) =>
-	  checkModule(dec, sigid, refOptEnv, basis)
+       of Absyn.TRANSPARENTstrexp(Absyn.STRUCTstrexp strdec, Absyn.SIGIDsigexp sigid, refOptEnv) =>
+	  checkModule(strdec, sigid, refOptEnv, basis)
+	| Absyn.OPAQUEstrexp(Absyn.STRUCTstrexp strdec, Absyn.SIGIDsigexp sigid, refOptEnv) =>
+	  checkModule(strdec, sigid, refOptEnv, basis)
 	| _ => nyi "non-plain form of <strexp>"
 
     fun bindStrid(Basis.BASIS(sigenv, Basis.E(Basis.SE dict, valenv)), strid, env) =
@@ -354,14 +378,14 @@ structure TypeCheck : TYPE_CHECK =
     fun checkStrBind(Absyn.STRBIND strbinds, basis) =
       List.foldl checkStrBind' basis strbinds
 
-    fun checkStrDec'(strdec, basis) =
+    fun checkTopStrDec'(strdec, basis) =
       case strdec
        of Absyn.DECstrdec _ => nyi "top-level plain <dec>"
 	| Absyn.STRUCTUREstrdec strbind => checkStrBind(strbind, basis)
 	| Absyn.LOCALstrdec _ => nyi "top-level 'local'"
 
-    fun checkStrDec(Absyn.STRDEC strdecs, basis) =
-      List.foldl checkStrDec' basis strdecs
+    fun checkTopStrDec(Absyn.STRDEC strdecs, basis) =
+      List.foldl checkTopStrDec' basis strdecs
 
     (*
      * TOP-LEVEL DECLARATIONS
@@ -369,7 +393,7 @@ structure TypeCheck : TYPE_CHECK =
 
     fun checkTopDec(topdec, basis) =
       case topdec
-       of Absyn.STRDECtopdec strdec => checkStrDec(strdec, basis)
+       of Absyn.STRDECtopdec strdec => checkTopStrDec(strdec, basis)
 	| Absyn.SIGDECtopdec sigbind => checkSigBind(sigbind, basis)
 	| Absyn.FUNDECtopdec _ => nyi "functor declarations"
 
