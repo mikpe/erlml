@@ -95,7 +95,7 @@ Token.ui Token.uo: TOKEN.sig.ui
 TRANSLATE.sig.ui TRANSLATE.sig.uo: Absyn.ui CoreErlang.ui
 Translate.ui Translate.uo: TRANSLATE.sig.ui Absyn.ui CoreErlang.ui Basis.ui Dict.ui
 TYPE_CHECK.sig.ui TYPE_CHECK.sig.uo: Absyn.ui Basis.ui
-TypeCheck.ui TypeCheck.uo: TYPE_CHECK.sig.ui Basis.ui Dict.ui Absyn.ui
+TypeCheck.ui TypeCheck.uo: TYPE_CHECK.sig.ui Basis.ui Dict.ui Absyn.ui Util.ui
 TYPE_SCHEME.sig.ui TYPE_SCHEME.sig.uo: Types.ui
 TypeScheme.ui TypeScheme.uo: TYPE_SCHEME.sig.ui Types.ui Util.ui
 Types.ui Types.uo: TYPES.sig.ui

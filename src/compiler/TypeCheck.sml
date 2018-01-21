@@ -26,13 +26,13 @@ structure TypeCheck : TYPE_CHECK =
     fun error msg =
       (sayErr("TypeCheck: " ^ msg ^ "\n"); raise TypeCheck)
 
+    (*
+     * IDENTIFIERS
+     *)
+
     fun readBasisFile(id, ext) =
       (* TODO: path for basis files? *)
       SOME(Basis.read(id ^ ext ^ ".basis")) handle _ => NONE
-
-    (*
-     * PATTERNS
-     *)
 
     fun unbound(kind, strids, id) =
       error("unbound " ^ kind ^ " " ^ String.concatWith "." (strids @ [id]))
@@ -84,74 +84,113 @@ structure TypeCheck : TYPE_CHECK =
 	    | NONE => unboundVid(List.rev revpfx, vid)
 	end
 
-    fun bindVid(Basis.E(strenv, Basis.VE dict), vid, idstatus) =
-      Basis.E(strenv, Basis.VE(Dict.insert(dict, vid, idstatus)))
+    fun veBindVid(Basis.VE dict, vid, idstatus) = (* VE+{vid->idstatus}, but checks vid not in Dom(VE) *)
+      case Dict.find(dict, vid)
+       of NONE => Basis.VE(Dict.insert(dict, vid, idstatus))
+	| SOME _ => error("vid " ^ vid ^ " already bound")
 
-    fun checkPat(env, pat) =
+    fun vePlusVE(VE, Basis.VE VE') = (* VE+VE', but checks Dom(VE) and Dom(VE') are disjoint *)
+      let fun bind(vid, idstatus, VE) = veBindVid(VE, vid, idstatus)
+      in
+	Dict.fold(bind, VE, VE')
+      end
+
+    fun cPlusVE(Basis.E(SE, Basis.VE dict1), Basis.VE dict2) =
+      Basis.E(SE, Basis.VE(Dict.plus(dict1, dict2)))
+
+    val ePlusVE = cPlusVE
+
+    fun cPlusE(Basis.E(Basis.SE SE1, Basis.VE VE1), Basis.E(Basis.SE SE2, Basis.VE VE2)) =
+      Basis.E(Basis.SE(Dict.plus(SE1, SE2)), Basis.VE(Dict.plus(VE1, VE2)))
+
+    (*
+     * PATTERNS
+     *)
+
+    fun labelToString(Absyn.IDlab id) = id
+      | labelToString(Absyn.INTlab i) = Int.toString i
+
+    fun checkPat(C, pat, VE) = (* C |- pat => (VE,tau) *)
       case pat
-       of Absyn.WILDpat => env
-	| Absyn.SCONpat _ => env
+       of Absyn.WILDpat => VE
+	| Absyn.SCONpat _ => VE
 	| Absyn.VIDpat(longid, refOptIdStatus) =>
 	  (case longid
 	    of Absyn.LONGID([], vid) =>
-	       (case lookupVid(env, vid)
-		 of SOME(_, idstatus) => (refOptIdStatus := SOME idstatus; env)
-		  | NONE => (refOptIdStatus := SOME Basis.VAL; bindVid(env, vid, Basis.VAL)))
-	     | _ => (refOptIdStatus := SOME(#2(lookupLongVid(env, longid))); env))
-	| Absyn.RECpat(row, false) => List.foldl checkFieldPat env row
+	       (case lookupVid(C, vid)
+		 of SOME(_, idstatus) => (refOptIdStatus := SOME idstatus; VE)
+		  | NONE => (refOptIdStatus := SOME Basis.VAL; veBindVid(VE, vid, Basis.VAL)))
+	     | _ => (refOptIdStatus := SOME(#2(lookupLongVid(C, longid))); VE))
+	| Absyn.RECpat(row, false) => checkPatRow(C, row, VE)
 	| Absyn.RECpat(_, true) => nyi "flexible record patterns"
-	| Absyn.CONSpat(_, pat) => checkPat(env, pat)
-	| Absyn.TYPEDpat(pat, _) => checkPat(env, pat)
-	| Absyn.ASpat(vid, pat) => checkPat(bindVid(env, vid, Basis.VAL), pat)
+	| Absyn.CONSpat(_, pat) => checkPat(C, pat, VE)
+	| Absyn.TYPEDpat(pat, _) => checkPat(C, pat, VE)
+	| Absyn.ASpat(vid, pat) =>
+	  (case lookupVid(C, vid)
+	    of NONE => ()
+	     | SOME(_, Basis.VAL) => ()
+	     | SOME(_, _) => error("vid " ^ vid ^ " is a constructor");
+	   checkPat(C, pat, veBindVid(VE, vid, Basis.VAL)))
 
-    and checkFieldPat((_, pat), env) = checkPat(env, pat)
+    and checkPatRow(C, row, VE) = (* C |- patrow => (VE,rho) *)
+      let val (VE, _) = List.foldl (checkPatRowField C) (VE, []) row
+      in
+	VE
+      end
+
+    and checkPatRowField C ((lab, pat), (VE, labels)) =
+      let val VE = checkPat(C, pat, VE)
+      in
+	if Util.member(lab, labels) then error("label " ^ labelToString lab ^ " already bound")
+	else (VE, lab :: labels)
+      end
 
     (*
      * DATATYPE and EXCEPTION declarations
      *)
 
-    fun checkConBind' mkis ((vid, tyOpt), env) =
+    fun checkConBind' C mkis ((vid, tyOpt), VE) =
       (* TODO:
-       * - check vid may be bound (not bound in env, not forbidden)
+       * - check vid may be bound (not forbidden)
        * - elaborate tyOpt and record that too
        *)
       let val hasarg = case tyOpt of SOME _ => true
 				  |  NONE => false
       in
-	bindVid(env, vid,  mkis hasarg)
+	veBindVid(VE, vid, mkis hasarg)
       end
 
-    fun checkConBind(Absyn.CONBIND conbinds, mkis, env) =
-      List.foldl (checkConBind' mkis) env conbinds
+    fun checkConBind(C, mkis, Absyn.CONBIND conbinds) = (* C,tau |- conbind => VE *)
+      List.foldl (checkConBind' C mkis) Basis.emptyVE conbinds
 
-    fun checkDatBind' mkis ((_, _, conbind), env) =
+    fun checkDatBind' C ((_, _, conbind), VE) =
       (* TODO:
        * - check tycon may be bound
        * - compute equality attribute
        * - record tycon in TE
        *)
-      checkConBind(conbind, mkis, env)
+      vePlusVE(VE, checkConBind(C, Basis.CON, conbind))
 
-    fun checkDatBind(Absyn.DATBIND datbinds, mkis, env) =
-      List.foldl (checkDatBind' mkis) env datbinds
+    fun checkDatBind(C, Absyn.DATBIND datbinds) = (* C |- datbind => VE,TE *)
+      List.foldl (checkDatBind' C) Basis.emptyVE datbinds
 
-    fun checkExBind(exb, env) =
+    fun checkExBind' C (exb, VE) =
       case exb
-       of Absyn.CONexb vid => bindVid(env, vid, Basis.EXN false)
-	| Absyn.OFexb(vid, _) => bindVid(env, vid, Basis.EXN true)
+       of Absyn.CONexb vid => veBindVid(VE, vid, Basis.EXN false)
+	| Absyn.OFexb(vid, _) => veBindVid(VE, vid, Basis.EXN true)
 	| Absyn.EQexb(vid, longvid) =>
-	  case #2(lookupLongVid(env, longvid))
-	   of idstatus as Basis.EXN _ => bindVid(env, vid, idstatus)
+	  case #2(lookupLongVid(C, longvid))
+	   of idstatus as Basis.EXN _ => veBindVid(VE, vid, idstatus)
 	    | _ => error "exception aliasing non-exception"
 
-    fun checkExBinds(exbinds, env) =
-      List.foldl checkExBind env exbinds
+    fun checkExBind(C, exbind) = (* C |- exbind => VE *)
+      List.foldl (checkExBind' C) Basis.emptyVE exbind
 
     (*
      * EXPRESSIONS
      *)
 
-    fun checkLetRecPat((pat, _), env) = checkPat(env, pat)
+    fun checkLetRecPat C ((pat, _), VE) = checkPat(C, pat, VE)
 
     fun checkExp(env, exp) =
       case exp
@@ -168,7 +207,7 @@ structure TypeCheck : TYPE_CHECK =
 		else refLongVid := longvid'
 	  end
 	| Absyn.RECexp row => List.app (checkFieldExp env) row
-	| Absyn.LETexp(dec, exp) => checkExp(checkLetDec(dec, env), exp)
+	| Absyn.LETexp(dec, exp) => checkExp(cPlusE(env, checkDec(env, dec)), exp)
 	| Absyn.APPexp(f, arg) => (checkExp(env, f); checkExp(env, arg))
 	| Absyn.TYPEDexp(exp, _) => checkExp(env, exp)
 	| Absyn.HANDLEexp(exp, match) => (checkExp(env, exp); checkMatch(env, match))
@@ -177,52 +216,66 @@ structure TypeCheck : TYPE_CHECK =
 
     and checkFieldExp env (_, exp) = checkExp(env, exp)
 
-    and checkMatch(env, Absyn.MATCH clauses) = List.app (checkClause env) clauses
+    and checkMatch(C, Absyn.MATCH mrules) = (* C |- match => tau *)
+      List.app (checkMrule C) mrules
 
-    and checkClause env (pat, exp) = checkExp(checkPat(env, pat), exp)
-
-    and checkLetDec(Absyn.DEC decs, env) =
-      List.foldl checkLetDec' env decs
-
-    and checkLetDec'(dec, env) =
-      case dec
-       of Absyn.VALdec(_, nonrecs, recs) => checkLetRecs(recs, List.foldl checkLetNonRec env nonrecs)
-	| Absyn.TYPEdec _ => env
-	| Absyn.DATATYPEdec(datbind, _) => checkDatBind(datbind, Basis.CON, env)
-	| Absyn.DATAREPLdec _ => env (* FIXME: import idstatus for ctors *)
-	| Absyn.EXdec exbinds => checkExBinds(exbinds, env)
-	| _ => nyi "abstype, local, or open form of <dec> in LET"
-
-    and checkLetNonRec((pat, exp), env) = (checkExp(env, exp); checkPat(env, pat))
-
-    and checkLetRecs(recs, env) =
-      let val env' = List.foldl checkLetRecPat env recs
-	  val _ = List.app (checkLetRecMatch env') recs
+    and checkMrule C (pat, exp) = (* C |- mrule => tau *)
+      let val VE = checkPat(C, pat, Basis.emptyVE)
       in
-	env'
+	checkExp(cPlusVE(C, VE), exp)
       end
 
-    and checkLetRecMatch env (_, match) = (checkMatch(env, match); ())
+    and checkDec(C, Absyn.DEC decs) = (* C |- dec => E *)
+      List.foldl (checkDec' C) Basis.emptyEnv decs
+
+    and checkDec' C (dec, E) =
+      let val C = cPlusE(C, E)
+      in
+	case dec
+	 of Absyn.VALdec(_, nonrecs, recs) => ePlusVE(E, checkValBind(C, nonrecs, recs))
+	  | Absyn.TYPEdec _ => E
+	  | Absyn.DATATYPEdec(datbind, _) => ePlusVE(E, checkDatBind(C, datbind))
+	  | Absyn.DATAREPLdec _ => E (* FIXME: import idstatus for ctors *)
+	  | Absyn.EXdec exbind => ePlusVE(E, checkExBind(C, exbind))
+	  | _ => nyi "abstype, local, or open form of <dec>"
+      end
+
+    and checkValBind(C, nonrecs, recs) = (* C |- valbind => VE *)
+      checkLetRecs(C, recs, List.foldl (checkLetNonRec C) Basis.emptyVE nonrecs)
+
+    and checkLetNonRec C ((pat, exp), VE) = (checkExp(C, exp); checkPat(C, pat, VE))
+
+    and checkLetRecs(C, recs, VE) =
+      let val VErec = List.foldl (checkLetRecPat C) Basis.emptyVE recs
+	  val _ = List.app (checkLetRecMatch (cPlusVE(C, VErec))) recs
+      in
+	vePlusVE(VE, VErec)
+      end
+
+    and checkLetRecMatch C (_, match) = checkMatch(C, match)
 
     (*
      * SPECIFICATIONS
      *)
 
-    fun checkValSpec((vid, _), env) =
+    fun checkValDesc' C ((vid, _), VE) =
       (* TODO:
-       * - check vid may be bound (not bound in env, not forbidden)
+       * - check vid may be bound (not forbidden)
        * - elaborate ty and record that too
        *)
-      bindVid(env, vid, Basis.VAL)
+      veBindVid(VE, vid, Basis.VAL)
+
+    fun checkValDesc(C, valdesc) = (* C |- valdesc => VE *)
+      List.foldl (checkValDesc' C) Basis.emptyVE valdesc
 
     fun checkSpec'(spec, env) =
       case spec
-       of Absyn.VALspec valspecs => List.foldl checkValSpec env valspecs
+       of Absyn.VALspec valdesc => ePlusVE(env, checkValDesc(env, valdesc))
 	| Absyn.TYPEspec _ => env (* TODO *)
 	| Absyn.EQTYPEspec _ => env (* TODO *)
-	| Absyn.DATATYPEspec datbind => checkDatBind(datbind, Basis.CON, env)
+	| Absyn.DATATYPEspec datbind => ePlusVE(env, checkDatBind(env, datbind))
 	| Absyn.DATAREPLspec _ => env (* FIXME: import idstatus for ctors *)
-	| Absyn.EXspec conbind => checkConBind(conbind, Basis.EXN, env)
+	| Absyn.EXspec conbind => ePlusVE(env, checkConBind(env, Basis.EXN, conbind))
 	| Absyn.STRUCTUREspec _ => nyi "nested structure in <spec>"
 	| Absyn.INCLUDEspec _ => nyi "include <spec>" (* TODO *)
 	| Absyn.SHARINGTYspec _ => nyi "sharing type <spec>"
@@ -276,17 +329,8 @@ structure TypeCheck : TYPE_CHECK =
      * STRUCTURES
      *)
 
-    fun checkDec(dec, env) =
-      case dec
-       of Absyn.VALdec(_, nonrecs, recs) => checkLetRecs(recs, List.foldl checkLetNonRec env nonrecs)
-	| Absyn.TYPEdec _ => env
-	| Absyn.DATATYPEdec(datbind, _) => checkDatBind(datbind, Basis.CON, env)
-	| Absyn.DATAREPLdec _ => env (* FIXME: import idstatus for ctors *)
-	| Absyn.EXdec exbinds => checkExBinds(exbinds, env)
-	| _ => nyi "abstype, local, or open form of structure-level <dec>"
-
-    fun checkModule(Absyn.DEC decs, sigid, refOptEnv, basis) =
-      let val _ = List.foldl checkDec Basis.emptyEnv decs
+    fun checkModule(dec, sigid, refOptEnv, basis) =
+      let val _ = checkDec(Basis.emptyEnv, dec)
 	  val Basis.SIG env = checkSigid(sigid, basis)
       in
 	refOptEnv := SOME env;
