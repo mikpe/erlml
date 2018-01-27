@@ -20,5 +20,6 @@ signature UTIL =
     val min		: int * int -> int
     val member		: ''a * ''a list -> bool
     val intersect	: ''a list * ''a list -> ''a list
+    val sort		: ('a * 'a -> bool) * 'a list -> 'a list
     val after		: (unit -> 'a) * (unit -> unit) -> 'a
   end

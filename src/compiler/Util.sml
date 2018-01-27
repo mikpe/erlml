@@ -38,6 +38,26 @@ structure Util : UTIL =
 
     fun intersect(xs, ys) = intersect'(xs, ys, [])
 
+    fun sort(lt, list) =
+      let fun merge([], ys) = ys
+	    | merge(xs, []) = xs
+	    | merge(xs as x::xs', ys as y::ys') =
+	      if lt(x, y) then x :: merge(xs', ys)
+	      else y :: merge(xs, ys')
+	  fun split([], xs, ys) = (xs, ys)
+	    | split([x], xs, ys) = (x::xs, ys)
+	    | split(x::y::zs, xs, ys) = split(zs, x::xs, y::ys)
+	  fun sort'([]) = []
+	    | sort'([x]) = [x]
+	    | sort'(xs) =
+	      let val (ys, zs) = split(xs, [], [])
+	      in
+		merge(sort' ys, sort' zs)
+	      end
+      in
+	sort' list
+      end
+
     fun after(compute, cleanup) =
       let datatype 'a status = OK of 'a | EXN of exn
 	  val status = OK(compute()) handle exn => EXN exn
