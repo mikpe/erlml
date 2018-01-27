@@ -40,10 +40,8 @@ use "PARSER.sig";
 use "Parser.sml";
 use "TYPES.sig";
 use "Types.sml";
-use "TYPE_SCHEME.sig";
-use "TypeScheme.sml";
 use "UNIFY.sig";
-(*use "Unify.sml";*)(*TODO: unfinished*)
+use "Unify.sml";
 use "TYPE_CHECK.sig";
 use "TypeCheck.sml";
 use "CORE_ERLANG.sig";

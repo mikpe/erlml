@@ -16,44 +16,74 @@
 signature TYPES =
   sig
 
-    type Level		= int
-    type TyName		= string
-    type Label		= string
+    (* TYPES *)
 
-    datatype Type	= VAR of TyVar
-                        | REC of Record
-			| CONS of Type list * TyName
+    type level		= int
 
-    and TyVar		= TYVAR of {
-			  (* generalization scope upper bound *)
-			  level	: int,
-			  (* requires equality? *)
-			  eq	: bool,
-			  (* optional monomorphic overloading *)
-			  ovld	: TyName list option,
-			  (* substitution *)
-			  subst	: Type option ref
-			  }
+    datatype label
+      = IDlab of string
+      | INTlab of int
 
-    and Record		= RECORD of {
-			  (* known fields *)
-			  fields : (Label * Type) list,
-			  (* flexible? *)
-			  is_flexible : bool,
-			  (* substitution *)
-			  subst : Record option ref
-			  }
+    datatype tynameeq
+      = NEVER
+      | MAYBE
+      | ALWAYS
 
-    val mkTyVar		: Level * bool * TyName list option -> TyVar
-    val mkFreeTyVar	: Level -> TyVar
-    val mkEqTyVar	: Level -> TyVar
-    val mkOvldTyVar	: TyName list * Level -> TyVar
+    datatype tyname
+      = TYNAME of {
+	  strid		: string,
+	  tycon		: string,
+	  eq		: tynameeq		(* admits equality? *)
+	}
 
-    val tyvarOvld	: TyVar -> TyName list option
+    datatype ty
+      = VAR of tyvar
+      | REC of record
+      | CONS of ty list * tyname
 
-    val derefTy		: Type -> Type
+    and tyvar
+      = RIGID of string				(* without leading ' *)
+      | FREE of {
+	  level		: int,			(* generalization scope upper bound *)
+	  eq		: bool,			(* admits/requires equality? *)
+	  ovld		: tyname list option,	(* optional monomorphic overloading *)
+	  subst		: ty option ref		(* substitution *)
+        }
 
-    val mkRecord	: (Label * Type) list * bool -> Record
-    val derefRecord	: Record -> Record
+    and record
+      = RECORD of {
+	  fields	: (label * ty) list,		(* known fields *)
+	  subst		: record option ref option	(* substitution, if flexible *)
+	}
+
+    val mkTyvar		: level * bool * tyname list option -> tyvar
+    val mkFreeTyvar	: level -> tyvar
+    val mkEqTyvar	: level -> tyvar
+    val mkOvldTyvar	: tyname list * level -> tyvar
+    val tyvarOvld	: tyvar -> tyname list option
+
+    val derefTy		: ty -> ty
+
+    val mkRecord	: (label * ty) list * bool -> record
+    val derefRecord	: record -> record
+
+    val tyAdmitsEq	: ty * bool -> bool
+
+    (* TYPE FUNCTIONS *)
+
+    type tyfcn
+    val lambda		: tyvar list * ty -> tyfcn
+    val tyfcnArity	: tyfcn -> int
+    val applyTyfcn	: tyfcn * ty list -> ty
+    val tyfcnAdmitsEq	: tyfcn -> bool
+
+    (* TYPE SCHEMES *)
+
+    type tyscheme
+    val genLimit	: ty * level -> tyscheme
+    val genAll		: ty -> tyscheme
+    val genNone		: ty -> tyscheme
+    val instFree	: tyscheme * level -> tyvar list * ty
+    val instRigid	: tyscheme -> tyvar list * ty
 
   end

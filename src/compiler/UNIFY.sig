@@ -15,7 +15,7 @@
  *)
 signature UNIFY =
   sig
-    type Type = Types.Type
+    type Type = Types.ty
     exception Unify
     val unify : Type * Type -> unit
   end

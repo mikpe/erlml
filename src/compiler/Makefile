@@ -38,9 +38,8 @@ UNITS=\
 	Parser \
 	TYPES.sig \
 	Types \
-	TYPE_SCHEME.sig \
-	TypeScheme \
 	UNIFY.sig \
+	Unify \
 	TYPE_CHECK.sig \
 	TypeCheck \
 	CORE_ERLANG.sig \
@@ -96,11 +95,9 @@ TRANSLATE.sig.ui TRANSLATE.sig.uo: Absyn.ui CoreErlang.ui
 Translate.ui Translate.uo: TRANSLATE.sig.ui Absyn.ui CoreErlang.ui Basis.ui Dict.ui
 TYPE_CHECK.sig.ui TYPE_CHECK.sig.uo: Absyn.ui Basis.ui
 TypeCheck.ui TypeCheck.uo: TYPE_CHECK.sig.ui Basis.ui Dict.ui Absyn.ui Util.ui
-TYPE_SCHEME.sig.ui TYPE_SCHEME.sig.uo: Types.ui
-TypeScheme.ui TypeScheme.uo: TYPE_SCHEME.sig.ui Types.ui Util.ui
-Types.ui Types.uo: TYPES.sig.ui
+Types.ui Types.uo: TYPES.sig.ui Util.ui
 UNIFY.sig.ui UNIFY.sig.uo: Types.ui
-Unify.ui Unify.uo: UNIFY.sig.ui
+Unify.ui Unify.uo: UNIFY.sig.ui Types.ui Util.ui
 Util.ui Util.uo: UTIL.sig.ui
 
 clean:

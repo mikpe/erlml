@@ -16,40 +16,52 @@
 structure Types : TYPES =
   struct
 
-    type Level		= int
-    type TyName		= string
-    type Label		= string
+    (* TYPES *)
 
-    datatype Type	= VAR of TyVar
-                        | REC of Record
-			| CONS of Type list * TyName
+    type level		= int
 
-    and TyVar		= TYVAR of {
-			  (* generalization scope upper bound *)
-			  level	: int,
-			  (* requires equality? *)
-			  eq	: bool,
-			  (* optional monomorphic overloading *)
-			  ovld	: TyName list option,
-			  (* substitution *)
-			  subst	: Type option ref
-			  }
+    datatype label
+      = IDlab of string
+      | INTlab of int
 
-    and Record		= RECORD of {
-			  (* known fields *)
-			  fields : (Label * Type) list,
-			  (* flexible? *)
-			  is_flexible : bool,
-			  (* substitution *)
-			  subst : Record option ref
-			  }
+    datatype tynameeq
+      = NEVER
+      | MAYBE
+      | ALWAYS
 
-    fun mkTyVar(level, eq, ovld) = TYVAR{level = level, eq = eq, ovld = ovld, subst = ref NONE}
-    fun mkFreeTyVar(level) = mkTyVar(level, false, NONE)
-    fun mkEqTyVar(level) = mkTyVar(level, true, NONE)
-    fun mkOvldTyVar(ovld, level) = mkTyVar(level, false, SOME ovld)
+    datatype tyname
+      = TYNAME of {
+	  strid		: string,
+	  tycon		: string,
+	  eq		: tynameeq		(* admits equality? *)
+	}
 
-    fun tyvarOvld(TYVAR{ovld, ...}) = ovld
+    datatype ty
+      = VAR of tyvar
+      | REC of record
+      | CONS of ty list * tyname
+
+    and tyvar
+      = RIGID of string				(* without leading ' *)
+      | FREE of {
+	  level		: int,			(* generalization scope upper bound *)
+	  eq		: bool,			(* admits/requires equality? *)
+	  ovld		: tyname list option,	(* optional monomorphic overloading *)
+	  subst		: ty option ref		(* substitution *)
+        }
+
+    and record
+      = RECORD of {
+	  fields	: (label * ty) list,		(* known fields *)
+	  subst		: record option ref option	(* substitution, if flexible *)
+	}
+
+    fun mkTyvar(level, eq, ovld) = FREE{level = level, eq = eq, ovld = ovld, subst = ref NONE}
+    fun mkFreeTyvar(level) = mkTyvar(level, false, NONE)
+    fun mkEqTyvar(level) = mkTyvar(level, true, NONE)
+    fun mkOvldTyvar(ovld, level) = mkTyvar(level, false, SOME ovld)
+    fun tyvarOvld(FREE{ovld, ...}) = ovld
+      | tyvarOvld(RIGID _) = NONE
 
     (* tyvar dereference with path compression *)
 
@@ -57,23 +69,259 @@ structure Types : TYPES =
       | update(x, subst :: substs) = (subst := SOME x; update(x, substs))
 
     local
-      fun deref(VAR(TYVAR{subst as ref(SOME ty), ...}), subst', substs) = deref(ty, subst, subst' :: substs)
+      fun deref(VAR(FREE{subst as ref(SOME ty), ...}), subst', substs) = deref(ty, subst, subst' :: substs)
 	| deref(ty, _, substs) = update(ty, substs)
     in
-      fun derefTy(VAR(TYVAR{subst as ref(SOME ty), ...})) = deref(ty, subst, [])
+      fun derefTy(VAR(FREE{subst as ref(SOME ty), ...})) = deref(ty, subst, [])
 	| derefTy(ty) = ty
     end
 
-    fun mkRecord(fields, is_flexible) = RECORD{fields = fields, is_flexible = is_flexible, subst = ref NONE}
+    fun mkRecord(fields, is_flexible) = RECORD{fields = fields, subst = if is_flexible then SOME(ref NONE) else NONE}
 
     (* record dereference with path compression *)
 
     local
-      fun deref(RECORD{subst as ref(SOME record), ...}, subst', substs) = deref(record, subst, subst' :: substs)
-	| deref(record as RECORD{subst = ref NONE, ...}, _, substs) = update(record, substs)
+      fun deref(RECORD{subst = SOME(subst as ref(SOME record)), ...}, subst', substs) = deref(record, subst, subst' :: substs)
+	| deref(record, _, substs) = update(record, substs)
     in
-      fun derefRecord(RECORD{subst as ref(SOME record), ...}) = deref(record, subst, [])
-	| derefRecord(record as RECORD{subst = ref NONE, ...}) = record
+      fun derefRecord(RECORD{subst = SOME(subst as ref(SOME record)), ...}) = deref(record, subst, [])
+	| derefRecord(record) = record
     end
+
+    fun tyAdmitsEq(ty, ignoreTyvars) =
+      let fun check ty =
+            case derefTy ty
+             of VAR tyvar =>
+                (ignoreTyvars orelse
+                 case tyvar
+                  of RIGID name => String.sub(name,0) = #"'" (* EtyVar *)
+                   | FREE{level,eq,subst,ovld,...} =>
+                     (if eq then () else subst := SOME(VAR(mkTyvar(level, eq, ovld)));
+                      true))
+	      | REC record =>
+		let val RECORD{fields, subst} = derefRecord record
+		    fun checkField(_, ty) = check ty
+		in
+		  case subst
+		   of SOME _ => false
+		    | NONE => List.all checkField fields
+		end
+	      | CONS(tys, TYNAME{eq, ...}) =>
+		case eq
+		 of ALWAYS => true
+		  | MAYBE => List.all check tys
+		  | NEVER => false
+      in
+        check ty
+      end
+
+    (* TYPE COMBINATORS: used internally to implement Type Functions and Type Schemes *)
+
+    datatype tycomb
+      = QUOTE of ty
+      | ARG of int
+      | MKREC of (label * tycomb) list * bool
+      | MKCONS of tycomb list * tyname
+
+    fun absBvars(bvars, ty) =
+      let fun isQuote(QUOTE _) = true
+	    | isQuote _ = false
+	  fun abstract ty =
+	    let val ty = derefTy ty
+	    in
+	      case ty
+		of VAR alpha =>
+		    let fun look([], _) = QUOTE ty
+			  | look(tyvar::tyvars, i) =
+			      if alpha = tyvar then ARG i else look(tyvars, i+1)
+		    in
+		      look(bvars, 0)
+		    end
+		 | REC record =>
+		    let val RECORD{fields, subst} = derefRecord record
+			fun abstractField(label, ty) = (label, abstract ty)
+			val fields = map abstractField fields
+			val is_flexible = case subst of NONE => false | SOME _ => true
+			fun isFieldQuote(_, c) = isQuote c
+		    in
+		      if List.all isFieldQuote fields then QUOTE ty else MKREC(fields, is_flexible)
+		    end
+		 | CONS(tys, t) =>
+		    let val cs = map abstract tys
+		    in
+		      if List.all isQuote cs then QUOTE ty else MKCONS(cs, t)
+		    end
+	    end
+      in
+	abstract ty
+      end
+
+    fun absAll ty =
+      let fun scan(ty, alphas) =
+	    case derefTy ty
+	      of VAR alpha => if Util.member(alpha, alphas) then alphas else alpha :: alphas
+	       | REC record =>
+		 let fun scanField((_, ty), alphas) = scan(ty, alphas)
+		     val RECORD{fields,...} = derefRecord record
+		 in
+		   List.foldl scanField alphas fields
+		 end
+	       | CONS(tys, _) => List.foldl scan alphas tys
+	  val bvars = scan(ty, [])
+      in
+	(bvars, absBvars(bvars, ty))
+      end
+
+    fun absNone ty = QUOTE(derefTy ty)
+
+    fun applyTycomb(comb, args) =
+      let val args = Vector.fromList args
+	  fun eval(QUOTE ty) = ty
+	    | eval(ARG i) = Vector.sub(args, i)
+	    | eval(MKREC(fields, is_flexible)) =
+	      let fun evalField(label, c) = (label, eval c)
+	      in
+		REC(mkRecord(map evalField fields, is_flexible))
+	      end
+	    | eval(MKCONS(cs, t)) = CONS(map eval cs, t)
+      in
+	eval comb
+      end
+
+    (* TYPE FUNCTIONS *)
+
+    datatype tyfcn = THETA of int * tycomb
+
+    fun lambda(bvars, ty) = THETA(length bvars, absBvars(bvars, ty))
+
+    fun tyfcnArity(THETA(arity, _)) = arity
+
+    exception Types
+
+    fun applyTyfcn(THETA(arity, comb), args) =
+      if arity = length args then applyTycomb(comb, args)
+      else raise Types
+
+    fun tyfcnAdmitsEq(THETA(arity, comb)) =
+      (* XXX: This conses a bit, but it's only called to check eqtype specs.
+       * Perhaps there should be a TyComb.admitsEq?
+       * The only requirement on mkeqty is that it return types
+       * tau for who Ty.admitsEq(tau, true) returns true.
+       *)
+      let fun mkeqty _ = VAR(RIGID "'a")
+	  val ty = applyTycomb(comb, List.tabulate(arity, mkeqty))
+      in
+	tyAdmitsEq(ty, true)
+      end
+
+    (* TYPE SCHEMES *)
+
+    datatype tyvarscheme = TVS of {eq: bool, ovld: tyname list option, name: string option}
+
+    datatype tyscheme = TYS of {bvars: tyvarscheme list, comb: tycomb}
+
+    (* GENERALIZATION *)
+
+    fun gen_bvar(FREE{eq, ovld, ...}, _) = TVS{eq = eq, ovld = ovld, name = NONE}
+      | gen_bvar(RIGID name, _) = TVS{eq = String.sub(name, 0) = #"'", ovld = NONE, name = SOME name}
+
+    fun cannot_gen(_, NONE) = false
+      | cannot_gen(RIGID _, SOME _) = true
+      | cannot_gen(FREE{ovld = SOME _, ...}, SOME _) = true
+      | cannot_gen(FREE{ovld = NONE, level, ...}, SOME limit) = level <= limit
+
+    fun next_offset([]) = 0
+      | next_offset((_, n) :: _) = n + 1
+
+    fun gen_tyvar(tyvar, bvars_in, cond) =
+      case cannot_gen(tyvar, cond)
+        of true =>
+	     (bvars_in, QUOTE(VAR tyvar))
+        |  false =>
+	     case Util.bound(bvars_in, tyvar)
+               of SOME offset =>
+		    (bvars_in, ARG offset)
+		| NONE =>
+		    let val offset = next_offset bvars_in
+		    in
+		      ((tyvar, offset) :: bvars_in, ARG offset)
+		    end
+
+    fun mkcons(combs, tyname) =
+      let fun try_unquote([], tys) = QUOTE(CONS(List.rev tys, tyname))
+	    | try_unquote(QUOTE ty :: combs', tys) = try_unquote(combs', ty :: tys)
+	    | try_unquote(_ :: _, _) = MKCONS(combs, tyname)
+      in
+	try_unquote(combs, [])
+      end
+
+    fun mkrec(fields, subst) =
+      let fun try_unquote([], fields'') = QUOTE(REC(RECORD{fields = List.rev fields'', subst = subst}))
+	    | try_unquote((label, QUOTE ty) :: fields', fields'') = try_unquote(fields', (label, ty) :: fields'')
+	    | try_unquote(_ :: _, _) = MKREC(fields, case subst of NONE => false |  SOME _ => true)
+      in
+	try_unquote(fields, [])
+      end
+
+    fun gen_ty(ty, bvars_in, cond) =
+      case derefTy ty
+       of VAR tyvar =>
+	  gen_tyvar(tyvar, bvars_in, cond)
+	| REC record =>
+	  let val RECORD{fields, subst} = derefRecord record
+	      val (bvars_out, fields', _) = List.foldl gen_field (bvars_in, [], cond) fields
+	  in
+	    (bvars_out, mkrec(List.rev fields', subst))
+	  end
+	| CONS(tys, tyname) =>
+	  let val (bvars_out, combs, _) = List.foldl gen_elt (bvars_in, [], cond) tys
+	  in
+	    (bvars_out, mkcons(List.rev combs, tyname))
+	  end
+
+    and gen_field((label, ty), (bvars_in, fields, cond)) =
+      let val (bvars_out, comb) = gen_ty(ty, bvars_in, cond)
+      in
+	(bvars_out, (label, comb) :: fields, cond)
+      end
+
+    and gen_elt(ty, (bvars_in, combs, cond)) =
+      let val (bvars_out, comb) = gen_ty(ty, bvars_in, cond)
+      in
+	(bvars_out, comb :: combs, cond)
+      end
+
+    fun gen_cond(ty, cond) =
+      let val (bvars, comb) = gen_ty(ty, [], cond)
+      in
+	TYS{bvars = map gen_bvar (List.rev bvars), comb = comb}
+      end
+
+    fun genLimit(ty, limit) = gen_cond(ty, SOME limit)
+    fun genAll ty = gen_cond(ty, NONE)
+    fun genNone ty = TYS{bvars = [], comb = QUOTE ty}
+
+    (* INSTANTIATION *)
+
+    fun instFree(TYS{bvars, comb}, level) =
+      let fun instBVar(TVS{eq, ovld, ...}) = mkTyvar(level, eq, ovld)
+	  val bvars' = List.map instBVar bvars
+      in
+	(bvars', applyTycomb(comb, map VAR bvars'))
+      end
+
+    (* This is only used on (a) type schemes constructed with genNone,
+     * and (b) type schemes constructed from explicit types with rigid
+     * type variables in specifications. In case (a), there are no
+     * type variables to instantiate, and in case (b), we reuse the
+     * rigid type variables instead of consing up new ones.
+     *)
+    fun instRigid(TYS{bvars, comb}) =
+      let fun instBVar(TVS{name = SOME name, ...}) = RIGID name
+	    | instBVar _ = raise Types
+	  val bvars' = List.map instBVar bvars
+      in
+        (bvars', applyTycomb(comb, map VAR bvars'))
+      end
 
   end
