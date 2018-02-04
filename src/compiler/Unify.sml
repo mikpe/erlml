@@ -98,15 +98,6 @@ structure Unify : UNIFY =
 	  subst2 := subst3
 	end
 
-    fun labelLt(Types.INTlab i1, Types.INTlab i2) = i1 < i2
-      | labelLt(Types.INTlab _, Types.IDlab _) = true
-      | labelLt(Types.IDlab _, Types.INTlab _) = false
-      | labelLt(Types.IDlab n1, Types.IDlab n2) = n1 < n2
-
-    fun fieldLt((l1, _), (l2, _)) = labelLt(l1, l2)
-
-    fun sortFields fields = Util.sort(fieldLt, fields)
-
     fun unify(ty1, ty2) = unify2(Types.derefTy ty1, Types.derefTy ty2)
 
     and unify2(ty1 as Types.VAR tyvar1, ty2 as Types.VAR tyvar2) =
@@ -139,8 +130,8 @@ structure Unify : UNIFY =
 	   val record2 = Types.derefRecord record2
 	   val Types.RECORD{fields = fields1, subst = subst1} = record1
 	   val Types.RECORD{fields = fields2, subst = subst2} = record2
-	   val fields1 = sortFields fields1
-	   val fields2 = sortFields fields2
+	   val fields1 = Types.sortFields fields1
+	   val fields2 = Types.sortFields fields2
        in
 	 case (subst1, subst2)
 	  of (SOME ref1, SOME ref2) => unify_records_un(fields1, fields2, ref1, ref2, [])
@@ -151,7 +142,7 @@ structure Unify : UNIFY =
 
    and unify_records_un(fields1 as (field1 as (lab1, ty1)) :: fields1', fields2 as (field2 as (lab2, ty2)) :: fields2', ref1, ref2, fields3) =
        if lab1 = lab2 then (unify(ty1, ty2); unify_records_un(fields1', fields2', ref1, ref2, field1 :: fields3))
-       else if labelLt(lab1, lab2) then unify_records_un(fields1', fields2, ref1, ref2, field1 :: fields3)
+       else if Types.labelLt(lab1, lab2) then unify_records_un(fields1', fields2, ref1, ref2, field1 :: fields3)
        else unify_records_un(fields1, fields2', ref1, ref2, field2 :: fields3) (* lab1 > lab2 *)
      | unify_records_un(fields1, fields2, ref1, ref2, fields3) =
        let val fields3 = List.rev(List.revAppend(fields1, List.revAppend(fields2, fields3)))
@@ -165,7 +156,7 @@ structure Unify : UNIFY =
      | unify_records_le(_, _, [], _) = raise Unify
      | unify_records_le(fields1 as (lab1, ty1) :: fields1', ref1, (lab2, ty2) :: fields2, record2) =
        if lab1 = lab2 then (unify(ty1, ty2); unify_records_le(fields1', ref1, fields2, record2))
-       else if labelLt(lab1, lab2) then raise Unify
+       else if Types.labelLt(lab1, lab2) then raise Unify
        else unify_records_le(fields1, ref1, fields2, record2) (* lab1 > lab2 *)
 
    and unify_records_eq([], []) = ()

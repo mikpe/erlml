@@ -88,6 +88,15 @@ structure Types : TYPES =
 	| derefRecord(record) = record
     end
 
+    fun labelLt(INTlab i1, INTlab i2) = i1 < i2
+      | labelLt(INTlab  _, IDlab   _) = true
+      | labelLt(IDlab   _, INTlab  _) = false
+      | labelLt(IDlab  n1, IDlab  n2) = n1 < n2
+
+    fun fieldLt((l1, _), (l2, _)) = labelLt(l1, l2)
+
+    fun sortFields fields = Util.sort(fieldLt, fields)
+
     fun tyAdmitsEq(ty, ignoreTyvars) =
       let fun check ty =
             case derefTy ty

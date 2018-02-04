@@ -66,6 +66,8 @@ signature TYPES =
 
     val mkRecord	: (label * ty) list * bool -> record
     val derefRecord	: record -> record
+    val labelLt		: label * label -> bool
+    val sortFields	: (label * ty) list -> (label * ty) list
 
     val tyAdmitsEq	: ty * bool -> bool
 
