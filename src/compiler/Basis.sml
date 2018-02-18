@@ -125,6 +125,16 @@ structure Basis : BASIS =
 	loop []
       end
 
+    (* I/O of non-negative integers *)
+
+    fun writeInt(os, i) =
+      writeIdent(os, Int.toString i)
+
+    fun readInt is =
+      case Int.fromString(readIdent is)
+       of SOME i => i
+	| NONE => error "invalid numeral"
+
     (* I/O of IdStatus *)
 
     fun writeIdStatus(os, idStatus) =
@@ -174,6 +184,283 @@ structure Basis : BASIS =
 	loop(Dict.empty identCompare)
       end
 
+    (* I/O of types *)
+
+    fun writeLabel(os, label) =
+      case label
+       of Types.IDlab ident => writeIdent(os, ident)
+	| Types.INTlab i => writeInt(os, i)
+
+    fun readLabel is =
+      let val ident = readIdent is
+      in
+	case Int.fromString ident
+	 of SOME i => Types.INTlab i
+	  | NONE => Types.IDlab ident
+      end
+
+    (* Since the key contains a ref and there is no compare function for refs,
+       we use an association list instead. *)
+    datatype alphamap = AM of {next: int, alist: (Types.alpha * int) list}
+
+    val alphaMapEmpty = AM{next = 0, alist = []}
+
+    fun findAlphaFromIndex(AM{alist = alist, ...}, index) =
+      let fun find((alpha, i) :: alist) = if i = index then SOME alpha else find alist
+	    | find([]) = NONE
+      in
+	find alist
+      end
+
+    fun updateAlphaMap(alphaMap as AM{next = next, alist = alist}, index, alpha) =
+      case findAlphaFromIndex(alphaMap, index)
+       of NONE => AM{next = index + 1, alist = (alpha, index) :: alist}
+	| SOME _ => error "updateAlphaMap"
+
+    fun findTyvar(alphaMap as AM{next = next, alist = alist}, alpha) =
+      case Util.bound(alist, alpha)
+       of SOME i => (true, alphaMap, i)
+	| NONE =>
+	  let val next = next + 1
+	      val alist = (alpha, next) :: alist
+	  in
+	    (false, AM{next = next, alist = alist}, next)
+	  end
+
+    fun writeTyname(os, Types.TYNAME{strid = strid, tycon = tycon, eq = eq}) =
+      (writeIdent(os, strid);
+       TextIO.output1(os, #".");
+       writeIdent(os, tycon);
+       TextIO.output1(os, case eq of Types.NEVER => #"n"
+				   | Types.MAYBE => #"m"
+				   | Types.ALWAYS => #"a"))
+
+    fun readTyname is =
+      let val strid = readIdent is
+	  val _ = readChar(is, #".")
+	  val tycon = readIdent is
+	  val eq =
+	      case TextIO.input1 is
+	       of SOME #"n" => Types.NEVER
+		| SOME #"m" => Types.MAYBE
+		| SOME #"a" => Types.ALWAYS
+		| SOME c => expected("n, m, or a", c)
+		| NONE => prematureEof "n, m, or a"
+      in
+	Types.TYNAME{strid = strid, tycon = tycon, eq = eq}
+      end
+
+    fun writeList(os, write, state, xs) =
+      let val _ = TextIO.output1(os, #"<")
+	  val state = List.foldl (fn(state, x) => write(os, state, x)) state xs
+	  val _ = TextIO.output1(os, #">")
+      in
+	state
+      end
+
+    fun readList(is, read, state) = (* TODO: merge with readDict *)
+      let val _ = readChar(is, #"<")
+	  fun loop(acc, state) =
+	    case TextIO.lookahead is
+	     of SOME #">" => (readChar(is, #">"); (List.rev acc, state))
+	      | _ =>
+		let val (item, state) = read(is, state)
+		in
+		  loop(item :: acc, state)
+		end
+      in
+	loop([], state)
+      end
+
+    fun writeFreeTyvar(os, Types.ALPHA{level=level, eq=eq, ovld=ovld, ...}) =
+      (TextIO.output1(os, #"{");
+       writeInt(os, level);
+       TextIO.output1(os, #" ");
+       TextIO.output1(os, if eq then #"t" else #"f");
+       TextIO.output1(os, #" ");
+       (case ovld
+	 of NONE => ()
+	  | SOME tynames => writeList(os, fn(os, tyname, ()) => writeTyname(os, tyname), (), tynames));
+       TextIO.output1(os, #"}"))
+
+    fun writeTyvar(os, tyvar, alphaMap) =
+      case tyvar
+       of Types.RIGID s =>
+	  (TextIO.output1(os, #"'"); writeIdent(os, s); alphaMap)
+	| Types.FREE(Types.ALPHA{level=level, eq=eq, ovld=ovld, subst=subst}) =>
+	  let val alpha = Types.ALPHA{level = level, eq=eq, ovld=ovld, subst=subst}
+	      val (foundP, alphaMap, i) = findTyvar(alphaMap, alpha)
+	      val _ = TextIO.output1(os, #"#")
+	      val _ = writeInt(os, i)
+	  in
+	    if foundP then ()
+	    else (TextIO.output1(os, #"="); writeFreeTyvar(os, alpha));
+	    TextIO.output1(os, #" ");
+	    alphaMap
+	  end
+
+    fun writeType(os, ty, alphaMap) =
+      case Types.derefTy ty
+       of Types.VAR tyvar => writeTyvar(os, tyvar, alphaMap)
+	| Types.REC record => writeRecordTy(os, record, alphaMap)
+	| Types.CONS(tys, tyname) => writeConsTy(os, tys, tyname, alphaMap)
+
+    and writeRecordTy(os, record, alphaMap) =
+      let val record = Types.derefRecord record
+	  val Types.RECORD{fields = fields, subst = subst} = record
+	  val fields = Types.sortFields fields
+	  val _ = TextIO.output1(os, #"{")
+	  val alphaMap = List.foldl (writeRecordTyField os) alphaMap fields
+	  val _ = case subst
+		   of SOME _ => TextIO.output1(os, #"?")
+                    | NONE => ()
+	  val _ = TextIO.output1(os, #"}")
+      in
+	alphaMap
+      end
+
+    and writeRecordTyField os ((label, ty), alphaMap) =
+      let val _= TextIO.output1(os, #"{")
+	  val _ = writeLabel(os, label)
+	  val _ = TextIO.output1(os, #" ")
+	  val alphaMap = writeType(os, ty, alphaMap)
+	  val _ = TextIO.output1(os, #"}")
+      in
+	alphaMap
+      end
+
+    and writeConsTy(os, tys, tyname, alphaMap) =
+      let val alphaMap = writeList(os, writeType, alphaMap, tys)
+	  val _ = writeTyname(os, tyname)
+      in
+	alphaMap
+      end
+
+    fun readRigidTyvar is =
+      Types.VAR(Types.RIGID(readIdent is))
+
+    fun readAlpha is =
+      let val _ = readChar(is, #"{")
+	  val level = readInt is
+	  val _ = readChar(is, #" ")
+	  val eq =
+	      case TextIO.input1 is
+	       of SOME #"t" => true
+		| SOME #"f" => false
+		| SOME c => expected("t or f", c)
+		| NONE => prematureEof "t or f"
+	  val _ = readChar(is, #" ")
+	  val ovld =
+	      case TextIO.lookahead is
+	       of SOME #"[" =>
+		  let val (tynames, ()) = readList(is, fn(is, ()) => (readTyname is, ()), ())
+		  in
+		    SOME tynames
+		  end
+		| _ => NONE
+	  val _ = readChar(is, #"}")
+      in
+	Types.ALPHA{level = level, eq = eq, ovld = ovld, subst = ref NONE}
+      end
+
+    fun readFreeTyvar(is, alphaMap) =
+      let val index = readInt is
+      in
+	case TextIO.input1 is
+	 of SOME #"=" =>
+	    let val alpha = readAlpha is
+		val _ = readChar(is, #" ")
+	    in
+	      (Types.VAR(Types.FREE alpha), updateAlphaMap(alphaMap, index, alpha))
+	    end
+	  | SOME #" " =>
+	    let val alpha = valOf(findAlphaFromIndex(alphaMap, index))
+	    in
+	      (Types.VAR(Types.FREE alpha), alphaMap)
+	    end
+	  | SOME c => expected("= or space", c)
+	  | NONE => prematureEof "= or space (after #<int> in <tyvar>"
+      end
+
+    fun readType(is, alphaMap) =
+      case TextIO.input1 is
+       of SOME #"'" => (readRigidTyvar is, alphaMap)
+	| SOME #"#" => readFreeTyvar(is, alphaMap)
+	| SOME #"{" => readRecordTy(is, alphaMap)
+	| SOME #"<" => readConsTy(is, alphaMap)
+	| SOME c => expected("<type>", c)
+	| NONE => prematureEof "<type>"
+
+    and readRecordTy(is, alphaMap) =
+      let val _ = readChar(is, #"{")
+	  val (fields, alphaMap) = readRecordTyFields(is, alphaMap)
+	  val subst =
+	      case TextIO.lookahead is
+	       of SOME #"?" => (readChar(is, #"?"); SOME(ref NONE))
+		| _ => NONE
+	  val _ = readChar(is, #"}")
+      in
+	(Types.REC(Types.RECORD{fields = Types.sortFields fields, subst = subst}), alphaMap)
+      end
+
+    and readRecordTyFields(is, alphaMap) =
+      let fun loop(acc, alphaMap) =
+	    case TextIO.lookahead is
+	     of SOME #"{" =>
+		let val (field, alphaMap) = readRecordTyField(is, alphaMap)
+		in
+		  loop(field :: acc, alphaMap)
+		end
+	      | _ => (List.rev acc, alphaMap)
+      in
+	loop([], alphaMap)
+      end
+
+    and readRecordTyField(is, alphaMap) =
+      let val _ = readChar(is, #"{")
+	  val label = readLabel is
+	  val _ = readChar(is, #" ")
+	  val (ty, alphaMap) = readType(is, alphaMap)
+	  val _ = readChar(is, #"}")
+      in
+	((label, ty), alphaMap)
+      end
+
+    and readConsTy(is, alphaMap) =
+     let val (tys, alphaMap) = readList(is, readType, alphaMap)
+	 val tyname = readTyname is
+     in
+       (Types.CONS(tys, tyname), alphaMap)
+     end
+
+    (* I/O of type functions *)
+
+    fun writeTyfcn(os, tyfcn) =
+      let fun mktyvar i = Types.RIGID(Int.toString i)
+	  fun mkty i = Types.VAR(mktyvar i)
+	  val arity = Types.tyfcnArity tyfcn
+      in
+	TextIO.output1(os, #"{");
+	writeInt(os, arity);
+	TextIO.output1(os, #" ");
+	writeType(os, Types.applyTyfcn(tyfcn, List.tabulate(arity, mkty)), alphaMapEmpty);
+	TextIO.output1(os, #"}")
+      end
+
+    fun readTyfcn is =
+      let fun mktyvar i = Types.RIGID(Int.toString i)
+	  val _ = readChar(is, #"{")
+	  val arity = readInt is
+	  val _ = readChar(is, #" ")
+	  val (ty, alphaMap) = readType(is, alphaMapEmpty)
+	  val _ = readChar(is, #"}")
+      in
+	(case alphaMap
+	  of AM{next = 0, alist = []} => ()
+	   | _ => raise Basis);
+	Types.lambda(List.tabulate(arity, mktyvar), ty)
+      end
+
     (* I/O of valenv *)
 
     fun writeValenvMapping(vid, idStatus, os) =
@@ -200,11 +487,42 @@ structure Basis : BASIS =
     fun readValenv is =
       VE(readDict(is, readValenvMapping))
 
+    (* I/O of tyenv *)
+
+    fun writeTyenvMapping(tycon, TYSTR(tyfcn, valenv), os) =
+      (TextIO.output1(os, #"{");
+       writeIdent(os, tycon);
+       TextIO.output1(os, #" ");
+       writeTyfcn(os, tyfcn);
+       TextIO.output1(os, #" ");
+       writeValenv(os, valenv);
+       TextIO.output1(os, #"}");
+       os)
+
+    fun readTyenvMapping(is, dict) =
+      let val _ = readChar(is, #"{")
+	  val tycon = readIdent is
+	  val _ = readChar(is, #" ")
+	  val tyfcn = readTyfcn is
+	  val _ = readChar(is, #" ")
+	  val valenv = readValenv is
+	  val _ = readChar(is, #"}")
+      in
+	Dict.insert(dict, tycon, TYSTR(tyfcn, valenv))
+      end
+
+    fun writeTyenv(os, TE dict) =
+      writeDict(os, dict, writeTyenvMapping)
+
+    fun readTyenv is =
+      TE(readDict(is, readTyenvMapping))
+
     (* I/O of env and strenv *)
 
-    fun writeEnv(os, E(strenv, _, valenv)) =
+    fun writeEnv(os, E(strenv, tyenv, valenv)) =
       (TextIO.output1(os, #"(");
        writeStrenv(os, strenv);
+       writeTyenv(os, tyenv);
        writeValenv(os, valenv);
        TextIO.output1(os, #")"))
 
@@ -221,10 +539,11 @@ structure Basis : BASIS =
     fun readEnv is =
       let val _ = readChar(is, #"(")
 	  val strenv = readStrenv is
+	  val tyenv = readTyenv is
 	  val valenv = readValenv is
 	  val _ = readChar(is, #")")
       in
-	E(strenv, emptyTE, valenv)
+	E(strenv, tyenv, valenv)
       end
 
     and readStrenv is =
