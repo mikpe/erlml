@@ -39,11 +39,11 @@ structure TypeCheck : TYPE_CHECK =
     fun unboundVid(strids, vid) = unbound("vid", strids, vid)
     fun unboundStrId(strids, strid) = unbound("strid", strids, strid)
 
-    fun lookupFirstStrId(Basis.E(Basis.SE dict, _), strid) =
+    fun lookupFirstStrId(Basis.E(Basis.SE dict, _, _), strid) =
       case Dict.find(dict, strid)
        of SOME env => env
 	| NONE =>
-	  let val Basis.BASIS(_, Basis.E(Basis.SE dict, _)) = Basis.initialBasis
+	  let val Basis.BASIS(_, Basis.E(Basis.SE dict, _, _)) = Basis.initialBasis
 	  in
 	    case Dict.find(dict, strid)
 	     of SOME env => env
@@ -53,7 +53,7 @@ structure TypeCheck : TYPE_CHECK =
 		  | NONE => unboundStrId([], strid)
 	  end
 
-    fun lookupNextStrId(strid, (Basis.E(Basis.SE dict, _), revpfx)) =
+    fun lookupNextStrId(strid, (Basis.E(Basis.SE dict, _, _), revpfx)) =
       case Dict.find(dict, strid)
        of SOME env => (env, strid :: revpfx)
 	| NONE => unboundStrId(List.rev revpfx, strid)
@@ -63,7 +63,7 @@ structure TypeCheck : TYPE_CHECK =
        initial Basis, and lastly from a .basis file.  The resulting Env is then used to
        look up subsequent StrIds and finally the VId. *)
 
-    fun lookupVid(Basis.E(_, Basis.VE dict), vid) =
+    fun lookupVid(Basis.E(_, _, Basis.VE dict), vid) =
       case Dict.find(dict, vid)
        of NONE =>
           (case Dict.find(Basis.toplevelValEnv, vid)
@@ -77,7 +77,7 @@ structure TypeCheck : TYPE_CHECK =
 	   | NONE => unboundVid([], vid))
       | lookupLongVid(env, Absyn.LONGID(strid :: strids, vid)) =
 	let val env = lookupFirstStrId(env, strid)
-	    val (Basis.E(_, Basis.VE dict), revpfx) = List.foldl lookupNextStrId (env, [strid]) strids
+	    val (Basis.E(_, _, Basis.VE dict), revpfx) = List.foldl lookupNextStrId (env, [strid]) strids
 	in
           case Dict.find(dict, vid)
 	   of SOME idstatus => (NONE, idstatus)
@@ -95,13 +95,13 @@ structure TypeCheck : TYPE_CHECK =
 	Dict.fold(bind, VE, VE')
       end
 
-    fun cPlusVE(Basis.E(SE, Basis.VE dict1), Basis.VE dict2) =
-      Basis.E(SE, Basis.VE(Dict.plus(dict1, dict2)))
+    fun cPlusVE(Basis.E(SE, TE, Basis.VE dict1), Basis.VE dict2) =
+      Basis.E(SE, TE, Basis.VE(Dict.plus(dict1, dict2)))
 
     val ePlusVE = cPlusVE
 
-    fun cPlusE(Basis.E(Basis.SE SE1, Basis.VE VE1), Basis.E(Basis.SE SE2, Basis.VE VE2)) =
-      Basis.E(Basis.SE(Dict.plus(SE1, SE2)), Basis.VE(Dict.plus(VE1, VE2)))
+    fun cPlusE(Basis.E(Basis.SE SE1, Basis.TE TE1, Basis.VE VE1), Basis.E(Basis.SE SE2, Basis.TE TE2, Basis.VE VE2)) =
+      Basis.E(Basis.SE(Dict.plus(SE1, SE2)), Basis.TE(Dict.plus(TE1, TE2)), Basis.VE(Dict.plus(VE1, VE2)))
 
     val ePlusE = cPlusE
 
@@ -369,8 +369,8 @@ structure TypeCheck : TYPE_CHECK =
 	  checkModule(strdec, sigid, refOptEnv, basis)
 	| _ => nyi "non-plain form of <strexp>"
 
-    fun bindStrid(Basis.BASIS(sigenv, Basis.E(Basis.SE dict, valenv)), strid, env) =
-      Basis.BASIS(sigenv, Basis.E(Basis.SE(Dict.insert(dict, strid, env)), valenv))
+    fun bindStrid(Basis.BASIS(sigenv, Basis.E(Basis.SE dict, tyenv, valenv)), strid, env) =
+      Basis.BASIS(sigenv, Basis.E(Basis.SE(Dict.insert(dict, strid, env)), tyenv, valenv))
 
     fun checkStrBind'((strid, strexp), basis) =
       bindStrid(basis, strid, checkStrExp(strexp, basis))

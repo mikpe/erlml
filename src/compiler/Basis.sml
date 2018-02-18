@@ -26,7 +26,10 @@ structure Basis : BASIS =
 		      | VAL
     datatype valenv   = VE of (ident, idstatus) Dict.dict (* TODO: add TypeScheme *)
 
-    datatype env      = E of strenv * valenv (* TODO: add TyEnv *)
+    datatype tystr    = TYSTR of Types.tyfcn * valenv
+    datatype tyenv    = TE of (ident, tystr) Dict.dict
+
+    datatype env      = E of strenv * tyenv * valenv
     and strenv        = SE of (ident, env) Dict.dict
 
     datatype sigma    = SIG of env (* TODO: add TyNameSet? *)
@@ -36,9 +39,11 @@ structure Basis : BASIS =
 
     val emptyVE = VE(Dict.empty identCompare)
 
+    val emptyTE = TE(Dict.empty identCompare)
+
     val emptySE = SE(Dict.empty identCompare)
 
-    val emptyEnv = E(emptySE, emptyVE)
+    val emptyEnv = E(emptySE, emptyTE, emptyVE)
 
     val emptySIGE = SIGE(Dict.empty identCompare)
 
@@ -60,11 +65,13 @@ structure Basis : BASIS =
 		      , ("=", (LONGID([stridPrimitive], "="), VAL))
 		      , ("<", (LONGID([stridPrimitive], "<"), VAL))
 		     ])
+    val toplevelTyEnv = emptyTE
 
     val initialSigEnv = emptySIGE
     val initialValEnv = emptyVE
-    val initialStrEnv = SE(Dict.fromList(identCompare, [("TextIO", E(emptySE, veTextIO))]))
-    val initialEnv = E(initialStrEnv, initialValEnv)
+    val initialTyEnv = emptyTE
+    val initialStrEnv = SE(Dict.fromList(identCompare, [("TextIO", E(emptySE, emptyTE, veTextIO))]))
+    val initialEnv = E(initialStrEnv, initialTyEnv, initialValEnv)
     val initialBasis = BASIS(initialSigEnv, initialEnv)
 
     (* File I/O of basis objects *)
@@ -195,7 +202,7 @@ structure Basis : BASIS =
 
     (* I/O of env and strenv *)
 
-    fun writeEnv(os, E(strenv, valenv)) =
+    fun writeEnv(os, E(strenv, _, valenv)) =
       (TextIO.output1(os, #"(");
        writeStrenv(os, strenv);
        writeValenv(os, valenv);
@@ -217,7 +224,7 @@ structure Basis : BASIS =
 	  val valenv = readValenv is
 	  val _ = readChar(is, #")")
       in
-	E(strenv, valenv)
+	E(strenv, emptyTE, valenv)
       end
 
     and readStrenv is =

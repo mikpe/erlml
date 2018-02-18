@@ -30,14 +30,14 @@ UNITS=\
 	LexUtil \
 	LEXER.sig \
 	Lexer \
+	TYPES.sig \
+	Types \
 	BASIS.sig \
 	Basis \
 	ABSYN.sig \
 	Absyn \
 	PARSER.sig \
 	Parser \
-	TYPES.sig \
-	Types \
 	UNIFY.sig \
 	Unify \
 	TYPE_CHECK.sig \
@@ -73,8 +73,8 @@ erlml2core: $(OFILES)
 
 ABSYN.sig.ui ABSYN.sig.uo: Basis.ui
 Absyn.ui Absyn.uo: ABSYN.sig.ui Basis.ui
-BASIS.sig.ui BASIS.sig.uo: Dict.ui
-Basis.ui Basis.uo: BASIS.sig.ui Dict.ui Util.ui
+BASIS.sig.ui BASIS.sig.uo: Dict.ui Types.ui
+Basis.ui Basis.uo: BASIS.sig.ui Dict.ui Util.ui Types.ui
 CoreErlang.ui CoreErlang.uo: CORE_ERLANG.sig.ui
 CORE_ERLANG_PRINT.sig.ui CORE_ERLANG_PRINT.sig.uo: CoreErlang.ui
 CoreErlangPrint.ui CoreErlangPrint.uo: CORE_ERLANG_PRINT.sig.ui CoreErlang.ui Util.ui

@@ -244,7 +244,7 @@ structure Translate : TRANSLATE =
 			 ctor)
       end
 
-    fun transEnv(strid, Basis.E(_, Basis.VE ve)) =
+    fun transEnv(strid, Basis.E(_, _, Basis.VE ve)) =
       let val fundefs = Dict.fold(veToFunDef strid, [], ve)
 	  val exports = List.map #1 fundefs
 	  val ctor = List.foldl (mkCtor strid) (CoreErlang.E_LITERAL(CoreErlang.L_ATOM "ok")) exports

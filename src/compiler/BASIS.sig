@@ -26,7 +26,10 @@ signature BASIS =
 		      | VAL
     datatype valenv   = VE of (ident, idstatus) Dict.dict (* TODO: add TypeScheme *)
 
-    datatype env      = E of strenv * valenv (* TODO: add TyEnv *)
+    datatype tystr    = TYSTR of Types.tyfcn * valenv
+    datatype tyenv    = TE of (ident, tystr) Dict.dict
+
+    datatype env      = E of strenv * tyenv * valenv
     and strenv        = SE of (ident, env) Dict.dict
 
     datatype sigma    = SIG of env (* TODO: add TyNameSet? *)
