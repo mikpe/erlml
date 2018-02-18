@@ -43,7 +43,10 @@ structure Types : TYPES =
 
     and tyvar
       = RIGID of string				(* without leading ' *)
-      | FREE of {
+      | FREE of alpha
+
+    and alpha
+      = ALPHA of {
 	  level		: int,			(* generalization scope upper bound *)
 	  eq		: bool,			(* admits/requires equality? *)
 	  ovld		: tyname list option,	(* optional monomorphic overloading *)
@@ -56,11 +59,11 @@ structure Types : TYPES =
 	  subst		: record option ref option	(* substitution, if flexible *)
 	}
 
-    fun mkTyvar(level, eq, ovld) = FREE{level = level, eq = eq, ovld = ovld, subst = ref NONE}
+    fun mkTyvar(level, eq, ovld) = FREE(ALPHA{level = level, eq = eq, ovld = ovld, subst = ref NONE})
     fun mkFreeTyvar(level) = mkTyvar(level, false, NONE)
     fun mkEqTyvar(level) = mkTyvar(level, true, NONE)
     fun mkOvldTyvar(ovld, level) = mkTyvar(level, false, SOME ovld)
-    fun tyvarOvld(FREE{ovld, ...}) = ovld
+    fun tyvarOvld(FREE(ALPHA{ovld, ...})) = ovld
       | tyvarOvld(RIGID _) = NONE
 
     (* tyvar dereference with path compression *)
@@ -69,10 +72,10 @@ structure Types : TYPES =
       | update(x, subst :: substs) = (subst := SOME x; update(x, substs))
 
     local
-      fun deref(VAR(FREE{subst as ref(SOME ty), ...}), subst', substs) = deref(ty, subst, subst' :: substs)
+      fun deref(VAR(FREE(ALPHA{subst as ref(SOME ty), ...})), subst', substs) = deref(ty, subst, subst' :: substs)
 	| deref(ty, _, substs) = update(ty, substs)
     in
-      fun derefTy(VAR(FREE{subst as ref(SOME ty), ...})) = deref(ty, subst, [])
+      fun derefTy(VAR(FREE(ALPHA{subst as ref(SOME ty), ...}))) = deref(ty, subst, [])
 	| derefTy(ty) = ty
     end
 
@@ -104,7 +107,7 @@ structure Types : TYPES =
                 (ignoreTyvars orelse
                  case tyvar
                   of RIGID name => String.sub(name,0) = #"'" (* EtyVar *)
-                   | FREE{level,eq,subst,ovld,...} =>
+                   | FREE(ALPHA{level,eq,subst,ovld,...}) =>
                      (if eq then () else subst := SOME(VAR(mkTyvar(level, eq, ovld)));
                       true))
 	      | REC record =>
@@ -231,13 +234,13 @@ structure Types : TYPES =
 
     (* GENERALIZATION *)
 
-    fun gen_bvar(FREE{eq, ovld, ...}, _) = TVS{eq = eq, ovld = ovld, name = NONE}
+    fun gen_bvar(FREE(ALPHA{eq, ovld, ...}), _) = TVS{eq = eq, ovld = ovld, name = NONE}
       | gen_bvar(RIGID name, _) = TVS{eq = String.sub(name, 0) = #"'", ovld = NONE, name = SOME name}
 
     fun cannot_gen(_, NONE) = false
       | cannot_gen(RIGID _, SOME _) = true
-      | cannot_gen(FREE{ovld = SOME _, ...}, SOME _) = true
-      | cannot_gen(FREE{ovld = NONE, level, ...}, SOME limit) = level <= limit
+      | cannot_gen(FREE(ALPHA{ovld = SOME _, ...}), SOME _) = true
+      | cannot_gen(FREE(ALPHA{ovld = NONE, level, ...}), SOME limit) = level <= limit
 
     fun next_offset([]) = 0
       | next_offset((_, n) :: _) = n + 1

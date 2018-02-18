@@ -43,7 +43,10 @@ signature TYPES =
 
     and tyvar
       = RIGID of string				(* without leading ' *)
-      | FREE of {
+      | FREE of alpha
+
+    and alpha
+      = ALPHA of {
 	  level		: int,			(* generalization scope upper bound *)
 	  eq		: bool,			(* admits/requires equality? *)
 	  ovld		: tyname list option,	(* optional monomorphic overloading *)

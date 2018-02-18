@@ -20,7 +20,7 @@ structure Unify : UNIFY =
 
     exception Unify
 
-    fun same_tyvars(Types.FREE{subst = subst1, ...}, Types.FREE{subst = subst2, ...}) = subst1 = subst2
+    fun same_tyvars(Types.FREE(Types.ALPHA{subst = subst1, ...}), Types.FREE(Types.ALPHA{subst = subst2, ...})) = subst1 = subst2
       | same_tyvars(Types.RIGID name1, Types.RIGID name2) = name1 = name2
       | same_tyvars(_, _) = false
 
@@ -44,7 +44,7 @@ structure Unify : UNIFY =
     fun check_level maxlevel =
       let fun checkTy ty =
 	    case Types.derefTy ty
-	     of Types.VAR(Types.FREE{level, eq, ovld, subst}) =>
+	     of Types.VAR(Types.FREE(Types.ALPHA{level, eq, ovld, subst})) =>
 		if level > maxlevel then subst := SOME(Types.VAR(Types.mkTyvar(maxlevel, eq, ovld)))
 		else ()
 	      | Types.VAR(Types.RIGID _) => raise Unify (* FIXME *)
@@ -70,7 +70,7 @@ structure Unify : UNIFY =
       | check_ovld(SOME _, _) = raise Unify
 
     fun bind_tyvar(Types.RIGID _, _) = raise Unify
-      | bind_tyvar(tyvar1 as Types.FREE{level, eq, ovld, subst}, ty2) =
+      | bind_tyvar(tyvar1 as Types.FREE(Types.ALPHA{level, eq, ovld, subst}), ty2) =
 	(check_occur tyvar1 ty2;
 	 check_level level ty2;
 	 check_equality(eq, ty2);
@@ -87,8 +87,8 @@ structure Unify : UNIFY =
 
     fun unify_tyvars(Types.RIGID _, ty1, tyvar2, _) = bind_tyvar(tyvar2, ty1)
       | unify_tyvars(tyvar1, _, Types.RIGID _, ty2) = bind_tyvar(tyvar1, ty2)
-      | unify_tyvars(Types.FREE{level = level1, eq = eq1, ovld = ovld1, subst = subst1}, _,
-		     Types.FREE{level = level2, eq = eq2, ovld = ovld2, subst = subst2}, _) =
+      | unify_tyvars(Types.FREE(Types.ALPHA{level = level1, eq = eq1, ovld = ovld1, subst = subst1}), _,
+		     Types.FREE(Types.ALPHA{level = level2, eq = eq2, ovld = ovld2, subst = subst2}), _) =
 	let val level3 = join_level(level1, level2)
 	    val eq3 = join_eq(eq1, eq2)
 	    val ovld3 = join_ovld(ovld1, ovld2)
