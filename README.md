@@ -42,4 +42,3 @@ Omissions:
 - support for the SML Basis Library is incomplete, but improving
 - the type checker is incomplete, but improving
 - no documentation yet
-- no Makefile yet
