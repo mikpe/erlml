@@ -83,7 +83,7 @@ signature ABSYN =
       = DEC of dec1 list
 
     and dec1
-      = VALdec of tyvar list * (pat * exp) list * (pat * match) list
+      = VALdec of tyvar list ref * (pat * exp) list * (pat * match) list
       | TYPEdec of typbind
       | DATATYPEdec of datbind * typbind
       | DATAREPLdec of tycon * longtycon

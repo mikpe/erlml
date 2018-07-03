@@ -466,7 +466,7 @@ structure Parser : PARSER =
 	  val exp = build_if_exp(exp1, exp, Absyn.RECexp [])
 	  val match = Absyn.MATCH([(Absyn.RECpat([], false), exp)])
       in
-	Absyn.LETexp(Absyn.DEC [Absyn.VALdec([], [], [(Absyn.VIDpat(vid, ref NONE), match)])],
+	Absyn.LETexp(Absyn.DEC [Absyn.VALdec(ref [], [], [(Absyn.VIDpat(vid, ref NONE), match)])],
 		     appvid)
       end
 
@@ -1149,7 +1149,7 @@ structure Parser : PARSER =
 
     and parse_val_dec(tokens, fe) =
 	let val tyvarseq = parse_tyvarseq tokens
-	    fun done(nonrecs, recs) = Absyn.VALdec(tyvarseq, nonrecs, recs)
+	    fun done(nonrecs, recs) = Absyn.VALdec(ref tyvarseq, nonrecs, recs)
 	    fun dorec(nonrecs, recs) =
 	      done(nonrecs, and_item_plus_parse(tokens, parse_valrec_item fe))
 	    fun nonrec acc =
@@ -1182,7 +1182,7 @@ structure Parser : PARSER =
     and parse_fun_dec(tokens, fe) =
 	let val tyvarseq = parse_tyvarseq tokens
 	in
-	  Absyn.VALdec(tyvarseq, [], and_item_plus_parse(tokens, parse_fdef fe))
+	  Absyn.VALdec(ref tyvarseq, [], and_item_plus_parse(tokens, parse_fdef fe))
 	end
 
     and parse_fdef fe tokens =
@@ -2025,7 +2025,7 @@ structure Parser : PARSER =
 			    of Token.SEMICOLON => ()
 			     | Token.EOF => ()
 			     | _ => raise SyntaxError)
-		  val dec = Absyn.DEC[Absyn.VALdec([], [(Absyn.VIDpat(Absyn.LONGID([], "it"), ref NONE), exp)], [])]
+		  val dec = Absyn.DEC[Absyn.VALdec(ref [], [(Absyn.VIDpat(Absyn.LONGID([], "it"), ref NONE), exp)], [])]
 		  val strdec = Absyn.STRDEC[Absyn.DECstrdec dec]
 	      in
 		SOME(Absyn.STRDECtopdec strdec, fe)
