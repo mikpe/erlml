@@ -90,26 +90,26 @@ structure Dict : DICT =
 	  look t
 	end
 
-     fun tinsert(compare, t, x, y) =
-       let fun insert'(E, x, y) = T{key=x, attr=y, level=1, left=E, right=E}
-	     | insert'(T{key,attr,level,left,right}, x, y) =
-	       let val t = case compare(x,key)
-			    of LESS =>
-			       T{key=key, attr=attr, level=level, right=right,
-				 left=insert'(left,x,y)}
-			     | GREATER =>
-			       T{key=key, attr=attr, level=level, left=left,
-				 right=insert'(right,x,y)}
-			     | EQUAL =>
-			       T{key=x, attr=y, level=level, left=left, right=right}
-		   val t = skew t
-		   val t = split t
-	       in
-		 t
-	       end
-       in
-	 insert'(t, x, y)
-       end
+      fun tinsert(compare, t, x, y) =
+        let fun insert'(E, x, y) = T{key=x, attr=y, level=1, left=E, right=E}
+	      | insert'(T{key,attr,level,left,right}, x, y) =
+		let val t = case compare(x,key)
+			      of LESS =>
+				 T{key=key, attr=attr, level=level, right=right,
+				   left=insert'(left,x,y)}
+			       | GREATER =>
+				 T{key=key, attr=attr, level=level, left=left,
+				   right=insert'(right,x,y)}
+			       | EQUAL =>
+				 T{key=x, attr=y, level=level, left=left, right=right}
+		    val t = skew t
+		    val t = split t
+		in
+		  t
+		end
+	in
+	  insert'(t, x, y)
+	end
 
     in
 
