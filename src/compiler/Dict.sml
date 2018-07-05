@@ -209,6 +209,9 @@ structure Dict : DICT =
 
       fun empty compare = DICT{compare = compare, tree = E}
 
+      fun isEmpty(DICT{tree = E, ...}) = true
+	| isEmpty(_) = false
+
       fun insert(DICT{compare, tree}, x, y) =
 	DICT{compare = compare, tree = tinsert(compare, tree, x, y)}
 

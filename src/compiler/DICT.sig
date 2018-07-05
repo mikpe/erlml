@@ -21,6 +21,7 @@ signature DICT =
     type ('key, 'value) dict
 
     val empty	: ('key * 'key -> order) -> ('key, 'value) dict
+    val isEmpty : ('key, 'value) dict -> bool
     val insert	: ('key, 'value) dict * 'key * 'value -> ('key, 'value) dict
     val delete	: ('key, 'value) dict * 'key -> ('key, 'value) dict
     val find'	: ('key, 'value) dict * 'key -> ('key * 'value) option
