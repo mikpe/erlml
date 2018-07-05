@@ -45,6 +45,10 @@
  * uses a traditional representation, making all special cases explicit.
  *
  * This is the vanilla version with no optimizations applied.
+ *
+ * Code for deletion based on:
+ * "P. Ragde, Simple Balanced Binary Search Trees, Trends in Functional Programming
+ * in Education (TFPIE 2014), EPTCS 170, 2014, pp. 78--87.
  *)
 structure Dict : DICT =
   struct
@@ -59,6 +63,21 @@ structure Dict : DICT =
 		left: ('key, 'value) tree,
 		right: ('key, 'value) tree	}
 
+      (* Transform
+       *
+       *    x -> y -> z       level
+       *   /    /    / \
+       *  a    b    c   d     level - 1
+       *
+       * into
+       *
+       *        y             level + 1
+       *       / \
+       *      /   \
+       *     x     z          level
+       *    / \   / \
+       *   a   b c   d        level - 1
+       *)
       fun split(t as E) = t
 	| split(t as T{right=E,...}) = t
 	| split(t as T{right=T{right=E,...},...}) = t
@@ -70,6 +89,18 @@ structure Dict : DICT =
 		left=T{key=kx,attr=ax,level=lx,left=a,right=b}}
 	    else t
 
+      (* Transform
+       *
+       *    y <- x            level
+       *   / \    \
+       *  a   b    c          level - 1
+       *
+       * into
+       *
+       *    y -> x            level
+       *   /    / \
+       *  a    b   c          level - 1
+       *)
       fun skew(t as E) = t
 	| skew(t as T{left=E,...}) = t
 	| skew(t as T{key=kx,attr=ax,level=lx,right=c,
@@ -111,6 +142,65 @@ structure Dict : DICT =
 	  insert'(t, x, y)
 	end
 
+      fun tdelete(compare, t, x) =
+	let fun dellrg(T{left=lt, key=kt, attr=at, right=E, ...}) = (lt, kt, at)
+	      | dellrg(T{level=lv, left=lt, key=kt, attr=at, right=rt}) =
+		let val (lt', k', a') = dellrg lt
+		in
+		  (T{level=lv, left=lt', key=kt, attr=at, right=rt}, k', a')
+		end
+	      | dellrg(E) = raise Match (* silence non-exhaustive warning *)
+	    fun level(E) = 0
+	      | level(T{level=lvt,...}) = lvt
+	    fun sngl(E) = false
+	      | sngl(T{right=E,...}) = true
+	      | sngl(T{level=lvx, right=T{level=lvy,...}, ...}) = lvx > lvy
+	    fun nlvl(t as T{level=lvt, ...}) = if sngl t then lvt - 1 else lvt
+	      | nlvl(E) = raise Match (* silence non-exhaustive warning *)
+	    fun adjust(t as T{level=lvt, left=lt, key=kt, attr=at, right=rt}) =
+		  if (level lt >= lvt-1) andalso (level rt >= lvt-1) then
+		    t
+		  else if (level rt < lvt-1) andalso sngl lt then
+		    skew(T{level=lvt-1, left=lt, key=kt, attr=at, right=rt})
+		  else if (level rt < lvt-1) then
+		    case lt
+		      of T{level=lvl, left=a, key=kl, attr=al, right=T{level=lvb, left=lb, key=kb, attr=ab, right=rb}} =>
+			   T{level=lvb+1, key=kb, attr=ab,
+			     left=T{level=lvl, left=a, key=kl, attr=al, right=lb},
+                             right=T{level=lvt-1, left=rb, key=kt, attr=at, right=rt}}
+		       | _ => raise Match (* silence non-exhaustive warning *)
+		  else if (level rt < lvt) then
+		    split(T{level=lvt-1, left=lt, key=kt, attr=at, right=rt})
+		  else
+		    (case rt
+		       of T{level=lvr, left=(a as T{level=lva, left=c, key=ka, attr=aa, right=d}), key=kr, attr=ar, right=b} =>
+			    T{level=lva+1, key=ka, attr=aa,
+			      left=T{level=lvt-1, left=lt, key=kt, attr=at, right=c},
+			      right=split(T{level=nlvl a, left=d, key=kr, attr=ar, right=b})}
+			| _ => raise Match) (* silence non-exhaustive warning *)
+	      | adjust(E) = raise Match (* silence non-exhaustive warning *)
+	    fun delete(k, t) =
+	      case t
+		of E => E
+		 | T{level=lvt, left=lt, key=kt, attr=at, right=rt} =>
+		     case compare(k, kt)
+		       of LESS =>
+			    adjust(T{level=lvt, left=delete(k, lt), key=kt, attr=at, right=rt})
+			| GREATER =>
+			    adjust(T{level=lvt, left=lt, key=kt, attr=at, right=delete(k, rt)})
+			| EQUAL =>
+			    case (lt, rt)
+			      of (E, _) => rt
+			       | (_, E) => lt
+			       | (_, _) =>
+				   let val (lt', k', a') = dellrg lt
+				   in
+				     adjust(T{level=lvt, left=lt', key=k', attr=a', right=rt})
+				   end
+	in
+	  delete(x, t)
+	end
+
     in
 
       datatype ('key, 'value) dict
@@ -121,6 +211,9 @@ structure Dict : DICT =
 
       fun insert(DICT{compare, tree}, x, y) =
 	DICT{compare = compare, tree = tinsert(compare, tree, x, y)}
+
+      fun delete(DICT{compare, tree}, x) =
+	DICT{compare = compare, tree = tdelete(compare, tree, x)}
 
       fun find'(DICT{compare, tree}, x) =
 	case tfind(compare, tree, x)

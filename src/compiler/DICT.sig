@@ -22,6 +22,7 @@ signature DICT =
 
     val empty	: ('key * 'key -> order) -> ('key, 'value) dict
     val insert	: ('key, 'value) dict * 'key * 'value -> ('key, 'value) dict
+    val delete	: ('key, 'value) dict * 'key -> ('key, 'value) dict
     val find'	: ('key, 'value) dict * 'key -> ('key * 'value) option
     val find	: ('key, 'value) dict * 'key -> 'value option
     val plus	: ('key, 'value) dict * ('key, 'value) dict -> ('key, 'value) dict
