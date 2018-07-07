@@ -397,6 +397,10 @@ structure TypeCheck : TYPE_CHECK =
 	| Absyn.SIGDECtopdec sigbind => checkSigBind(sigbind, basis)
 	| Absyn.FUNDECtopdec _ => nyi "functor declarations"
 
-    fun check topdec = checkTopDec(topdec, Basis.emptyBasis)
+    fun check topdec =
+      let val _ = ExplicitTyVarScope.annotate topdec
+      in
+	checkTopDec(topdec, Basis.emptyBasis)
+      end
 
   end

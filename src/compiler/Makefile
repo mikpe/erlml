@@ -40,6 +40,8 @@ UNITS=\
 	Parser \
 	UNIFY.sig \
 	Unify \
+	EXPLICIT_TYVAR_SCOPE.sig \
+	ExplicitTyVarScope \
 	TYPE_CHECK.sig \
 	TypeCheck \
 	CORE_ERLANG.sig \
@@ -79,6 +81,8 @@ CoreErlang.ui CoreErlang.uo: CORE_ERLANG.sig.ui
 CORE_ERLANG_PRINT.sig.ui CORE_ERLANG_PRINT.sig.uo: CoreErlang.ui
 CoreErlangPrint.ui CoreErlangPrint.uo: CORE_ERLANG_PRINT.sig.ui CoreErlang.ui Util.ui
 Dict.ui Dict.uo: DICT.sig.ui
+EXPLICIT_TYVAR_SCOPE.sig.ui EXPLICIT_TYVAR_SCOPE.sig.uo: Absyn.ui
+ExplicitTyVarScope.ui ExplicitTyVarScope.uo: EXPLICIT_TYVAR_SCOPE.sig.ui Absyn.ui Dict.ui Basis.ui
 LEXARG.sig.ui LEXARG.sig.uo: Source.ui
 LexArg.ui LexArg.uo: LEXARG.sig.ui Source.ui
 LexUtil.ui LexUtil.uo: LEXUTIL.sig.ui
@@ -94,7 +98,7 @@ Token.ui Token.uo: TOKEN.sig.ui
 TRANSLATE.sig.ui TRANSLATE.sig.uo: Absyn.ui CoreErlang.ui
 Translate.ui Translate.uo: TRANSLATE.sig.ui Absyn.ui CoreErlang.ui Basis.ui Dict.ui
 TYPE_CHECK.sig.ui TYPE_CHECK.sig.uo: Absyn.ui Basis.ui
-TypeCheck.ui TypeCheck.uo: TYPE_CHECK.sig.ui Basis.ui Dict.ui Absyn.ui Util.ui
+TypeCheck.ui TypeCheck.uo: TYPE_CHECK.sig.ui Basis.ui Dict.ui Absyn.ui Util.ui ExplicitTyVarScope.ui
 Types.ui Types.uo: TYPES.sig.ui Util.ui
 UNIFY.sig.ui UNIFY.sig.uo: Types.ui
 Unify.ui Unify.uo: UNIFY.sig.ui Types.ui Util.ui

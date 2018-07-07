@@ -42,6 +42,8 @@ use "PARSER.sig";
 use "Parser.sml";
 use "UNIFY.sig";
 use "Unify.sml";
+use "EXPLICIT_TYVAR_SCOPE.sig";
+use "ExplicitTyVarScope.sml";
 use "TYPE_CHECK.sig";
 use "TypeCheck.sml";
 use "CORE_ERLANG.sig";
