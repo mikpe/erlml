@@ -1,0 +1,7 @@
+*.ui
+*.uo
+*.basis
+*.beam
+*.core
+erlml2core
+TODO*
