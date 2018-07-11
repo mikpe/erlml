@@ -41,6 +41,7 @@ structure TypeCheck : TYPE_CHECK =
       error("unbound " ^ kind ^ " " ^ String.concatWith "." (strids @ [id]))
     fun unboundVid(strids, vid) = unbound("vid", strids, vid)
     fun unboundStrId(strids, strid) = unbound("strid", strids, strid)
+    fun unboundTyCon(strids, tycon) = unbound("tycon", strids, tycon)
 
     fun lookupFirstStrId(Basis.E(Basis.SE dict, _, _), strid) =
       case Dict.find(dict, strid)
@@ -107,6 +108,59 @@ structure TypeCheck : TYPE_CHECK =
       Basis.E(Basis.SE(Dict.plus(SE1, SE2)), Basis.TE(Dict.plus(TE1, TE2)), Basis.VE(Dict.plus(VE1, VE2)))
 
     val ePlusE = cPlusE
+
+    (*
+     * TYPE EXPRESSIONS
+     *)
+
+    fun lookupLongTyCon(Basis.E(_, Basis.TE dict, _), Absyn.LONGID([], tycon)) =
+	  (case Dict.find(dict, tycon)
+	     of SOME tystr => tystr
+	      | NONE =>
+		  case Dict.find(Basis.toplevelTyEnv, tycon)
+		    of SOME tystr => tystr
+		     | NONE => unboundTyCon([], tycon))
+      | lookupLongTyCon(env, Absyn.LONGID(strid :: strids, tycon)) =
+	  let val env = lookupFirstStrId(env, strid)
+	      val (Basis.E(_, Basis.TE dict, _), revpfx) = List.foldl lookupNextStrId (env, [strid]) strids
+	  in
+	    case Dict.find(dict, tycon)
+	      of SOME tystr => tystr
+	       | NONE => unboundTyCon(List.rev revpfx, tycon)
+	  end
+
+    fun checkRho rho = (* PRE: rho is sorted *)
+      let fun loop(_, []) = ()
+	    | loop(l1, (l2, _) :: rest) =
+	        if l1 <> l2 then loop(l2, rest)
+		else error("label " ^ labelToString l2 ^ " already bound")
+      in
+	case rho
+	  of [] => ()
+	   | (l1, _) :: rest => loop(l1, rest)
+      end
+
+    fun elabTy(C, ty) = (* C |- ty => tau *)
+      case ty
+       of Absyn.VARty tyvar => Types.VAR(Types.RIGID tyvar)
+	| Absyn.RECty tyrow => elabTyRow(C, tyrow)
+	| Absyn.CONSty(tyseq, longtycon) => elabConsTy(C, tyseq, longtycon)
+	| Absyn.FUNty(ty, ty') => Types.CONS([elabTy(C, ty), elabTy(C, ty')], Basis.funTyname)
+
+    and elabTyRow(C, tyrow) =
+      let fun elabField(label, ty) = (label, elabTy(C, ty))
+	  val rho = Types.sortFields(List.map elabField tyrow)
+	  val _ = checkRho rho
+      in
+	Types.REC(Types.mkRecord(rho, false))
+      end
+
+    and elabConsTy(C, tyseq, longtycon) =
+      let val taus = List.map (fn ty => elabTy(C, ty)) tyseq
+	  val Basis.TYSTR(tyfcn, _) = lookupLongTyCon(C, longtycon)
+      in
+	Types.applyTyfcn(tyfcn, taus)
+      end
 
     (*
      * PATTERNS
