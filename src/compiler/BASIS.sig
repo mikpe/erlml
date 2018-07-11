@@ -43,6 +43,9 @@ signature BASIS =
        for primitives we use the proxy structure $PRIMITIVE *)
     val toplevelValEnv : (ident, longid * idstatus) Dict.dict
 
+    val funTyname : Types.tyname
+    val toplevelTyEnv : (ident, tystr) Dict.dict
+
     val emptyVE : valenv
     val emptyEnv : env
     val emptyBasis : basis

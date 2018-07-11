@@ -67,7 +67,43 @@ structure Basis : BASIS =
 		      , ("=", (LONGID([stridPrimitive], "="), VAL))
 		      , ("<", (LONGID([stridPrimitive], "<"), VAL))
 		     ])
-    val toplevelTyEnv = emptyTE
+
+    val funTyname = Types.TYNAME{strid = stridPrimitive, tycon = "->", eq = Types.NEVER}
+    val unitTy = Types.REC(Types.RECORD{fields = [], subst = NONE})
+    val boolTy = Types.CONS([], Types.TYNAME{strid = stridPrimitive, tycon = "bool", eq = Types.ALWAYS})
+    val intTy = Types.CONS([], Types.TYNAME{strid = stridPrimitive, tycon = "int", eq = Types.ALWAYS})
+    val wordTy = Types.CONS([], Types.TYNAME{strid = stridPrimitive, tycon = "word", eq = Types.ALWAYS})
+    val realTy = Types.CONS([], Types.TYNAME{strid = stridPrimitive, tycon = "real", eq = Types.NEVER})
+    val stringTy = Types.CONS([], Types.TYNAME{strid = stridPrimitive, tycon = "string", eq = Types.ALWAYS})
+    val charTy = Types.CONS([], Types.TYNAME{strid = stridPrimitive, tycon = "char", eq = Types.ALWAYS})
+    val alpha = Types.RIGID "a" (* 'a *)
+    val listTy = Types.CONS([Types.VAR alpha], Types.TYNAME{strid = stridPrimitive, tycon = "list", eq = Types.MAYBE})
+    val refTy = Types.CONS([Types.VAR alpha], Types.TYNAME{strid = stridPrimitive, tycon = "ref", eq = Types.ALWAYS})
+    val exnTy = Types.CONS([], Types.TYNAME{strid = stridPrimitive, tycon = "exn", eq = Types.NEVER})
+    val substringTy = Types.CONS([], Types.TYNAME{strid = stridPrimitive, tycon = "substring", eq = Types.NEVER})
+    val arrayTy = Types.CONS([Types.VAR alpha], Types.TYNAME{strid = stridPrimitive, tycon = "array", eq = Types.ALWAYS})
+    val vectorTy = Types.CONS([Types.VAR alpha], Types.TYNAME{strid = stridPrimitive, tycon = "vector", eq = Types.ALWAYS})
+    val optionTy = Types.CONS([Types.VAR alpha], Types.TYNAME{strid = stridPrimitive, tycon = "option", eq = Types.MAYBE})
+    val orderTy = Types.CONS([], Types.TYNAME{strid = stridPrimitive, tycon = "order", eq = Types.ALWAYS})
+
+    val toplevelTyEnv =
+      Dict.fromList(identCompare,
+		    [ ("unit", TYSTR(Types.lambda([], unitTy), emptyVE))
+		    , ("bool", TYSTR(Types.lambda([], boolTy), VE(Dict.fromList(identCompare, [("true", CON false), ("false", CON false)]))))
+		    , ("int", TYSTR(Types.lambda([], intTy), emptyVE))
+		    , ("word", TYSTR(Types.lambda([], wordTy), emptyVE))
+		    , ("real", TYSTR(Types.lambda([], realTy), emptyVE))
+		    , ("string", TYSTR(Types.lambda([], stringTy), emptyVE))
+		    , ("char", TYSTR(Types.lambda([], charTy), emptyVE))
+		    , ("list", TYSTR(Types.lambda([alpha], listTy), VE(Dict.fromList(identCompare, [("nil", CON false), ("::", CON true)]))))
+		    , ("ref", TYSTR(Types.lambda([alpha], refTy), VE(Dict.fromList(identCompare, [("ref", CON true)]))))
+		    , ("exn", TYSTR(Types.lambda([], exnTy), emptyVE))
+		    , ("substring", TYSTR(Types.lambda([], substringTy), emptyVE))
+		    , ("array", TYSTR(Types.lambda([alpha], arrayTy), emptyVE))
+		    , ("vector", TYSTR(Types.lambda([alpha], vectorTy), emptyVE))
+		    , ("option", TYSTR(Types.lambda([alpha], optionTy), VE(Dict.fromList(identCompare, [("NONE", CON false), ("SOME", CON true)]))))
+		    , ("order", TYSTR(Types.lambda([], orderTy), VE(Dict.fromList(identCompare, [("LESS", CON false), ("EQUAL", CON false), ("GREATER", CON false)]))))
+		    ])
 
     val initialSigEnv = emptySIGE
     val initialValEnv = emptyVE
