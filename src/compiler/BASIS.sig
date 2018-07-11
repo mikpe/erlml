@@ -21,6 +21,8 @@ signature BASIS =
 
     datatype longid   = LONGID of ident list * ident
 
+    datatype label    = datatype Types.label
+
     datatype idstatus = CON of bool (* hasarg? *)
 		      | EXN of bool (* hasarg? *)
 		      | VAL

@@ -26,6 +26,9 @@ structure TypeCheck : TYPE_CHECK =
     fun error msg =
       (sayErr("TypeCheck: " ^ msg ^ "\n"); raise TypeCheck)
 
+    fun labelToString(Basis.IDlab id) = id
+      | labelToString(Basis.INTlab i) = Int.toString i
+
     (*
      * IDENTIFIERS
      *)
@@ -108,9 +111,6 @@ structure TypeCheck : TYPE_CHECK =
     (*
      * PATTERNS
      *)
-
-    fun labelToString(Absyn.IDlab id) = id
-      | labelToString(Absyn.INTlab i) = Int.toString i
 
     fun checkPat(C, pat, VE) = (* C |- pat => (VE,tau) *)
       case pat

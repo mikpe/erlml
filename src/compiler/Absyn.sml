@@ -20,9 +20,7 @@ structure Absyn : ABSYN =
 
     datatype longid = datatype Basis.longid
 
-    datatype label
-      = IDlab of ident
-      | INTlab of int
+    datatype label = datatype Basis.label
 
     (* Type Expressions *)
 
