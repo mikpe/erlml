@@ -42,6 +42,7 @@ structure TypeCheck : TYPE_CHECK =
     fun unboundVid(strids, vid) = unbound("vid", strids, vid)
     fun unboundStrId(strids, strid) = unbound("strid", strids, strid)
     fun unboundTyCon(strids, tycon) = unbound("tycon", strids, tycon)
+    fun unboundTyVar tyvar = unbound("tyvar", [], tyvar)
 
     fun lookupFirstStrId(Basis.E(Basis.SE dict, _, _), strid) =
       case Dict.find(dict, strid)
@@ -108,6 +109,14 @@ structure TypeCheck : TYPE_CHECK =
       Basis.E(Basis.SE(Dict.plus(SE1, SE2)), Basis.TE(Dict.plus(TE1, TE2)), Basis.VE(Dict.plus(VE1, VE2)))
 
     val ePlusE = cPlusE
+
+    fun teBindTyCon(Basis.TE dict, tycon, tyfcn, VE) = (* TE+{tycon->(tyfcn,VE)}, but checks tycon not in Dom(TE) *)
+      case Dict.find(dict, tycon)
+       of NONE => Basis.TE(Dict.insert(dict, tycon, Basis.TYSTR(tyfcn, VE)))
+	| SOME _ => error("tycon " ^ tycon ^ " already bound")
+
+    fun ePlusTE(Basis.E(SE, Basis.TE dict1, VE), Basis.TE dict2) =
+      Basis.E(SE, Basis.TE(Dict.plus(dict1, dict2)), VE)
 
     (*
      * TYPE EXPRESSIONS
@@ -202,6 +211,53 @@ structure TypeCheck : TYPE_CHECK =
       end
 
     (*
+     * Type Bindings
+     *
+     * There appears to be some confusion regarding the scope of explicit type variables in
+     * typbind and datbind declarations.  SML'90 had a syntactic restriction 2.9, third bullet,
+     * "Any tyvar occurring within the right side must occur in tyvarseq".  Furthermore, in 4.4
+     * it specified that type functions must be closed.  Both of these restrictions are removed
+     * in SML'97.  However, Rossberg's "Defects" document lists this as an error in SML'97, and
+     * both Hamlet and MoscowML enforce the SML'90 rule.  We do the same.
+     *)
+
+    fun checkFreeTyVars(tyvarseq, ty) =
+      let fun checkTy ty =
+	    case ty
+	      of Absyn.VARty tyvar => if Util.member(tyvar, tyvarseq) then () else unboundTyVar tyvar
+	       | Absyn.RECty tyrow => List.app checkField tyrow
+	       | Absyn.CONSty(tyseq, _) => List.app checkTy tyseq
+	       | Absyn.FUNty(ty1, ty2) => (checkTy ty1; checkTy ty2)
+	  and checkField(_, ty) = checkTy ty
+      in
+	checkTy ty
+      end
+
+    (* Map list of syntactic tyvars to semantic tyvars.
+     * Check syntactic retrictions (no tyvarseq may contain the same tyvar twice).
+     *)
+    fun elabTyvarseq tyvarseq =
+      let fun loop([], acc) = List.rev acc
+	    | loop(tyvar :: tyvarseq, acc) =
+		if Util.member(tyvar, tyvarseq) then error("tyvar '" ^ tyvar ^ " already bound")
+		else loop(tyvarseq, (Types.RIGID tyvar) :: acc)
+      in
+	loop(tyvarseq, [])
+      end
+
+    fun elabTypBind' C ((tyvarseq, tycon, ty), TE) =
+      let val _ = checkFreeTyVars(tyvarseq, ty)
+	  val alphas = elabTyvarseq tyvarseq
+	  val tau = elabTy(C, ty)
+	  val tyfcn = Types.lambda(alphas, tau)
+      in
+	teBindTyCon(TE, tycon, tyfcn, Basis.emptyVE)
+      end
+
+    fun elabTypBind(C, Absyn.TYPBIND typbinds) = (* C |- typbind => TE *)
+      List.foldl (elabTypBind' C) Basis.emptyTE typbinds
+
+    (*
      * DATATYPE and EXCEPTION declarations
      *)
 
@@ -289,7 +345,7 @@ structure TypeCheck : TYPE_CHECK =
       in
 	case dec
 	 of Absyn.VALdec(_, nonrecs, recs) => ePlusVE(E, checkValBind(C, nonrecs, recs))
-	  | Absyn.TYPEdec _ => E
+	  | Absyn.TYPEdec typbind => ePlusTE(E, elabTypBind(C, typbind))
 	  | Absyn.DATATYPEdec(datbind, _) => ePlusVE(E, checkDatBind(C, datbind))
 	  | Absyn.DATAREPLdec _ => E (* FIXME: import idstatus for ctors *)
 	  | Absyn.EXdec exbind => ePlusVE(E, checkExBind(C, exbind))

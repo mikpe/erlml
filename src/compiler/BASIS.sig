@@ -47,6 +47,7 @@ signature BASIS =
     val toplevelTyEnv : (ident, tystr) Dict.dict
 
     val emptyVE : valenv
+    val emptyTE : tyenv
     val emptyEnv : env
     val emptyBasis : basis
     val initialBasis : basis
