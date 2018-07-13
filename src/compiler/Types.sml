@@ -33,7 +33,7 @@ structure Types : TYPES =
       = TYNAME of {
 	  strid		: string,
 	  tycon		: string,
-	  eq		: tynameeq		(* admits equality? *)
+	  eq		: tynameeq ref		(* admits equality? *)
 	}
 
     datatype ty
@@ -119,7 +119,7 @@ structure Types : TYPES =
 		    | NONE => List.all checkField fields
 		end
 	      | CONS(tys, TYNAME{eq, ...}) =>
-		case eq
+		case !eq
 		 of ALWAYS => true
 		  | MAYBE => List.all check tys
 		  | NEVER => false

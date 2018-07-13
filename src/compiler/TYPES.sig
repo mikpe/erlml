@@ -33,7 +33,7 @@ signature TYPES =
       = TYNAME of {
 	  strid		: string,
 	  tycon		: string,
-	  eq		: tynameeq		(* admits equality? *)
+	  eq		: tynameeq ref		(* admits equality? *)
 	}
 
     datatype ty
