@@ -400,20 +400,24 @@ structure TypeCheck : TYPE_CHECK =
       end
 
     (*
-     * EXCEPTION declarations
+     * Exception Bindings
      *)
 
-    fun checkExBind' C (exb, VE) =
+    fun elabExBind' C (exb, VE) =
       case exb
        of Absyn.CONexb vid => veBindVid(VE, vid, Basis.EXN false)
-	| Absyn.OFexb(vid, _) => veBindVid(VE, vid, Basis.EXN true)
+	| Absyn.OFexb(vid, ty) =>
+	  let val tau = elabTy(C, ty)
+	  in
+	    veBindVid(VE, vid, Basis.EXN true)
+	  end
 	| Absyn.EQexb(vid, longvid) =>
 	  case #2(lookupLongVid(C, longvid))
 	   of idstatus as Basis.EXN _ => veBindVid(VE, vid, idstatus)
 	    | _ => error "exception aliasing non-exception"
 
-    fun checkExBind(C, exbind) = (* C |- exbind => VE *)
-      List.foldl (checkExBind' C) Basis.emptyVE exbind
+    fun elabExBind(C, exbind) = (* C |- exbind => VE *)
+      List.foldl (elabExBind' C) Basis.emptyVE exbind
 
     (*
      * EXPRESSIONS
@@ -473,7 +477,7 @@ structure TypeCheck : TYPE_CHECK =
 	    in
 	      ePlusTE(ePlusVE(E, VE), teBindTyCon(Basis.emptyTE, tycon, tyfcn, VE))
 	    end
-	  | Absyn.EXdec exbind => ePlusVE(E, checkExBind(C, exbind))
+	  | Absyn.EXdec exbind => ePlusVE(E, elabExBind(C, exbind))
 	  | Absyn.LOCALdec(dec1, dec2) =>
 	    let val E1 = checkDec(C, dec1)
 		val E2 = checkDec(cPlusE(C, E1), dec2)
