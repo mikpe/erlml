@@ -100,31 +100,36 @@ structure Types : TYPES =
 
     fun sortFields fields = Util.sort(fieldLt, fields)
 
-    fun tyAdmitsEq(ty, ignoreTyvars) =
-      let fun check ty =
+    fun tyAdmitsEq ty =
+      let fun fold(_, eq, []) = eq
+	    | fold(f, eq, x::xs) =
+		case f x
+		 of ALWAYS => fold(f, eq, xs)
+		  | MAYBE => fold(f, MAYBE, xs)
+		  | NEVER => NEVER
+	  fun all(f, xs) = fold(f, ALWAYS, xs)
+	  fun checkTy ty =
             case derefTy ty
-             of VAR tyvar =>
-                (ignoreTyvars orelse
-                 case tyvar
-                  of RIGID name => String.sub(name,0) = #"'" (* EtyVar *)
-                   | FREE(ALPHA{level,eq,subst,ovld,...}) =>
-                     (if eq then () else subst := SOME(VAR(mkTyvar(level, eq, ovld)));
-                      true))
+	     of VAR(RIGID name) =>
+		if String.sub(name, 0) = #"'" then ALWAYS else MAYBE
+	      | VAR(FREE(ALPHA{level, eq, subst, ovld, ...})) =>
+		(if eq then () else subst := SOME(VAR(mkTyvar(level, eq, ovld)));
+		 ALWAYS)
 	      | REC record =>
 		let val RECORD{fields, subst} = derefRecord record
-		    fun checkField(_, ty) = check ty
 		in
 		  case subst
-		   of SOME _ => false
-		    | NONE => List.all checkField fields
+		   of SOME _ => NEVER
+		    | NONE => all(checkField, fields)
 		end
 	      | CONS(tys, TYNAME{eq, ...}) =>
 		case !eq
-		 of ALWAYS => true
-		  | MAYBE => List.all check tys
-		  | NEVER => false
+		 of ALWAYS => ALWAYS
+		  | MAYBE => all(checkTy, tys)
+		  | NEVER => NEVER
+	and checkField(_, ty) = checkTy ty
       in
-        check ty
+        checkTy ty
       end
 
     (* TYPE COMBINATORS: used internally to implement Type Functions and Type Schemes *)
@@ -223,7 +228,9 @@ structure Types : TYPES =
       let fun mkeqty _ = VAR(RIGID "'a")
 	  val ty = applyTycomb(comb, List.tabulate(arity, mkeqty))
       in
-	tyAdmitsEq(ty, true)
+	case tyAdmitsEq ty
+	  of ALWAYS => true
+	   | _ => false
       end
 
     (* TYPE SCHEMES *)

@@ -72,7 +72,7 @@ signature TYPES =
     val labelLt		: label * label -> bool
     val sortFields	: (label * ty) list -> (label * ty) list
 
-    val tyAdmitsEq	: ty * bool -> bool
+    val tyAdmitsEq	: ty -> tynameeq
 
     (* TYPE FUNCTIONS *)
 

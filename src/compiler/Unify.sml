@@ -62,7 +62,9 @@ structure Unify : UNIFY =
 
     fun check_equality(false, _) = ()
       | check_equality(true, ty) =
-	if Types.tyAdmitsEq(ty, false) then () else raise Unify
+	case Types.tyAdmitsEq ty
+	  of Types.ALWAYS => ()
+	   | _ => raise Unify
 
     fun check_ovld(NONE, _) = ()
       | check_ovld(SOME tynames, Types.CONS([], tyname)) =
