@@ -468,7 +468,11 @@ structure TypeCheck : TYPE_CHECK =
 	    in
 	      ePlusTE(ePlusVE(E, VE), TE)
 	    end
-	  | Absyn.DATAREPLdec _ => E (* FIXME: import idstatus for ctors *)
+	  | Absyn.DATAREPLdec(tycon, longtycon) =>
+	    let val Basis.TYSTR(tyfcn, VE) = lookupLongTyCon(C, longtycon)
+	    in
+	      ePlusTE(ePlusVE(E, VE), teBindTyCon(Basis.emptyTE, tycon, tyfcn, VE))
+	    end
 	  | Absyn.EXdec exbind => ePlusVE(E, checkExBind(C, exbind))
 	  | Absyn.LOCALdec(dec1, dec2) =>
 	    let val E1 = checkDec(C, dec1)
