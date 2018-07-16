@@ -115,8 +115,16 @@ structure TypeCheck : TYPE_CHECK =
        of NONE => Basis.TE(Dict.insert(dict, tycon, Basis.TYSTR(tyfcn, VE)))
 	| SOME _ => error("tycon " ^ tycon ^ " already bound")
 
+    fun tePlusTE(TE, Basis.TE TE') = (* TE+TE', but checks Dom(TE) and Dom(TE') are disjoint *)
+      let fun bind(tycon, Basis.TYSTR(tyfcn, VE), TE) = teBindTyCon(TE, tycon, tyfcn, VE)
+      in
+	Dict.fold(bind, TE, TE')
+      end
+
     fun ePlusTE(Basis.E(SE, Basis.TE dict1, VE), Basis.TE dict2) =
       Basis.E(SE, Basis.TE(Dict.plus(dict1, dict2)), VE)
+
+    val cPlusTE = ePlusTE
 
     (*
      * TYPE EXPRESSIONS
@@ -258,33 +266,142 @@ structure TypeCheck : TYPE_CHECK =
       List.foldl (elabTypBind' C) Basis.emptyTE typbinds
 
     (*
-     * DATATYPE and EXCEPTION declarations
+     * Datatype Bindings
      *)
 
-    fun checkConBind' C mkis ((vid, tyOpt), VE) =
-      (* TODO:
-       * - check vid may be bound (not forbidden)
-       * - elaborate tyOpt and record that too
-       *)
-      let val hasarg = case tyOpt of SOME _ => true
-				  |  NONE => false
+    fun checkConbindFreeTyVars tyvarseq (_, tyOpt) =
+      case tyOpt
+        of NONE => ()
+	 | SOME ty => checkFreeTyVars(tyvarseq, ty)
+
+    fun checkConbindsFreeTyVars(tyvarseq, Absyn.CONBIND conbinds) =
+      List.app (checkConbindFreeTyVars tyvarseq) conbinds
+
+    fun elabDatbindSkeletal'((tyvarseq, tycon, conbinds), (TE, datbind')) =
+      let val _ = checkConbindsFreeTyVars(tyvarseq, conbinds)
+	  val alphas = elabTyvarseq tyvarseq
+	  val tyname = Types.TYNAME{strid = "FIXME", tycon = tycon, eq = ref Types.MAYBE}
+	  val tau = Types.CONS(List.map Types.VAR alphas, tyname)
+	  val tyfcn = Types.lambda(alphas, tau)
       in
-	veBindVid(VE, vid, mkis hasarg)
+	(teBindTyCon(TE, tycon, tyfcn, Basis.emptyVE), (tyname, tau, tyfcn, (tyvarseq, tycon, conbinds)) :: datbind')
       end
 
-    fun checkConBind(C, mkis, Absyn.CONBIND conbinds) = (* C,tau |- conbind => VE *)
-      List.foldl (checkConBind' C mkis) Basis.emptyVE conbinds
+    (* Elaborate datbind to skeletal TE (with empty VEs) and datbind annotated with tynames, taus, and tyfcns.
+     * Check each datbind's tyvarseq for duplicates.
+     * Check each conbind for free tyvars wrt its tyvarseq.
+     * Create fresh tynames, initially admitting equality.
+     * Annotate each datbind with its tyname.
+     * Return skeletal TE and list of annotated datbinds.
+     *)
+    fun elabDatbindSkeletal(Absyn.DATBIND datbinds) = (* |- datbind => TE_skel,datbind' *)
+      List.foldl elabDatbindSkeletal' (Basis.emptyTE, []) datbinds
 
-    fun checkDatBind' C ((_, _, conbind), VE) =
-      (* TODO:
-       * - check tycon may be bound
-       * - compute equality attribute
-       * - record tycon in TE
-       *)
-      vePlusVE(VE, checkConBind(C, Basis.CON, conbind))
+    fun checkWithtype' (Basis.TE dict) (_, tycon, _) =
+      case Dict.find(dict, tycon)
+	of NONE => ()
+	 | SOME _ => error("tycon " ^ tycon ^ " already bound")
 
-    fun checkDatBind(C, Absyn.DATBIND datbinds) = (* C |- datbind => VE,TE *)
-      List.foldl (checkDatBind' C) Basis.emptyVE datbinds
+    (* Check that a withtype does not redefine a tycon defined in the datbind.  *)
+    fun checkWithtype(TE_skel, Absyn.TYPBIND typbinds) =
+      List.app (checkWithtype' TE_skel) typbinds
+
+    (* 2.9 Syntactic Restrictions, 5th bullet:
+     * ``No datbind, valbind, or exbind may bind "true", "false", "nil", "::" or "ref".
+     * No datbind or exbind may bind "it".''
+     *)
+    fun allowedConbindVid vid =
+      case vid
+       of "true" => false
+	| "false" => false
+	| "nil" => false
+	| "::" => false
+	| "ref" => false
+	| _ => true
+
+    fun checkConbindVid vid =
+      if allowedConbindVid vid then ()
+      else error("invalid binding of " ^ vid)
+
+    fun elabConbind' C tau ((vid, tyOpt), (VE, taus)) =
+      let val _ = checkConbindVid vid
+      in
+	case tyOpt
+	 of NONE => (veBindVid(VE, vid, Basis.CON false), taus)
+	  | SOME ty =>
+	    let val tau' = elabTy(C, ty)
+	    in
+	      (veBindVid(VE, vid, Basis.CON true), tau' :: taus)
+	    end
+      end
+
+    fun elabConbind(C, tau, Absyn.CONBIND conbinds) = (* C,tau |- conbind => VE,tau* *)
+      List.foldl (elabConbind' C tau) (Basis.emptyVE, []) conbinds
+
+    fun elabDatbind'' C ((tyname, tau, tyfcn, (tyvarseq, tycon, conbind)), (VE, TE, datbind'')) =
+      let val (VE', VEtaus) = elabConbind(C, tau, conbind)
+      in
+	(vePlusVE(VE, VE'), teBindTyCon(TE, tycon, tyfcn, VE'), (tyname, VEtaus) :: datbind'')
+      end
+
+    fun elabDatbind'(C, datbind') = (* C |- datbind' => (VE,TE,datbind'') *)
+      List.foldl (elabDatbind'' C) (Basis.emptyVE, Basis.emptyTE, []) datbind'
+
+    fun veAdmitsEq VEtaus =
+      let fun loop([], eq) = eq
+	    | loop(tau :: taus, eq) =
+		case Types.tyAdmitsEq tau
+		  of Types.NEVER => Types.NEVER
+		   | Types.MAYBE => loop(taus, Types.MAYBE)
+		   | Types.ALWAYS => loop(taus, eq)
+      in
+	loop(VEtaus, Types.ALWAYS)
+      end
+
+    fun maximisesEquality datbind'' = (* (tyname * VEtaus) list -> unit *)
+      let fun loop([], false, _) = ()
+	    | loop([], true, acc) = loop(acc, false, [])
+	    | loop((tyname as Types.TYNAME{eq, ...}, VEtaus) :: rest, restart, acc) =
+		case veAdmitsEq VEtaus
+		  of Types.ALWAYS =>
+		     (eq := Types.ALWAYS;
+		      loop(rest, true, acc))
+		   | Types.MAYBE =>
+		     loop(rest, restart, (tyname, VEtaus) :: acc)
+		   | Types.NEVER =>
+		     (eq := Types.NEVER;
+		      loop(rest, true, acc))
+      in
+	loop(datbind'', false, [])
+      end
+
+    (* 1. Create TE_skel = {tycon -> (tyfcn,VEempty)} for all tycon in datbind.
+     *    a) check each tyvarseq for duplicates, and each conbind for free tyvars wrt its tyvarseq
+     *    b) create fresh tynames, initially admitting equality
+     *    c) create datbind' where each datbind is annotated with its tyname and tyfcn
+     * 2. Using TE_skel elaborate withtype to TE_with.
+     *    a) check that the withtype does not redefine a tycon from the datbind
+     *    b) elaborate the withtype as a normal typbind in C+TE_skel
+     * 3. Using TE_skel+TE_with elaborate datbind' to VE and TE_datb.
+     *    a) also create datbind'' as a list of pairs of tynames and lists of constructor types
+     * 4. For each (tyfcn,VE') in TE_datb, if VE' does not admit equality, clear tyfcn's tyname's eq attribute.
+     *    This actually operates on the (tycon, taus) in datbind''.
+     *    Iterate until fixpoint.
+     * 5. Return VE,TE_datb+TE_with
+     *)
+    fun elabDatBind(C, datbind, typbind) = (* C |- datbind => VE,TE except we also deal with the withtype *)
+      let val (TE_skel, datbind') = elabDatbindSkeletal datbind
+	  val _ = checkWithtype(TE_skel, typbind)
+	  val TE_with = elabTypBind(cPlusTE(C, TE_skel), typbind)
+	  val (VE, TE_datb, datbind'') = elabDatbind'(cPlusTE(cPlusTE(C, TE_skel), TE_with), datbind')
+	  val _ = maximisesEquality datbind''
+      in
+	(VE, tePlusTE(TE_datb, TE_with))
+      end
+
+    (*
+     * EXCEPTION declarations
+     *)
 
     fun checkExBind' C (exb, VE) =
       case exb
@@ -346,7 +463,11 @@ structure TypeCheck : TYPE_CHECK =
 	case dec
 	 of Absyn.VALdec(_, nonrecs, recs) => ePlusVE(E, checkValBind(C, nonrecs, recs))
 	  | Absyn.TYPEdec typbind => ePlusTE(E, elabTypBind(C, typbind))
-	  | Absyn.DATATYPEdec(datbind, _) => ePlusVE(E, checkDatBind(C, datbind))
+	  | Absyn.DATATYPEdec(datbind, typbind) =>
+	    let val (VE, TE) = elabDatBind(C, datbind, typbind)
+	    in
+	      ePlusTE(ePlusVE(E, VE), TE)
+	    end
 	  | Absyn.DATAREPLdec _ => E (* FIXME: import idstatus for ctors *)
 	  | Absyn.EXdec exbind => ePlusVE(E, checkExBind(C, exbind))
 	  | Absyn.LOCALdec(dec1, dec2) =>
@@ -385,6 +506,31 @@ structure TypeCheck : TYPE_CHECK =
 
     fun checkValDesc(C, valdesc) = (* C |- valdesc => VE *)
       List.foldl (checkValDesc' C) Basis.emptyVE valdesc
+
+    fun checkConBind' C mkis ((vid, tyOpt), VE) =
+      (* TODO:
+       * - check vid may be bound (not forbidden)
+       * - elaborate tyOpt and record that too
+       *)
+      let val hasarg = case tyOpt of SOME _ => true
+				  |  NONE => false
+      in
+	veBindVid(VE, vid, mkis hasarg)
+      end
+
+    fun checkConBind(C, mkis, Absyn.CONBIND conbinds) = (* C,tau |- conbind => VE *)
+      List.foldl (checkConBind' C mkis) Basis.emptyVE conbinds
+
+    fun checkDatBind' C ((_, _, conbind), VE) =
+      (* TODO:
+       * - check tycon may be bound
+       * - compute equality attribute
+       * - record tycon in TE
+       *)
+      vePlusVE(VE, checkConBind(C, Basis.CON, conbind))
+
+    fun checkDatBind(C, Absyn.DATBIND datbinds) = (* C |- datbind => VE,TE *)
+      List.foldl (checkDatBind' C) Basis.emptyVE datbinds
 
     fun checkSpec'(spec, env) =
       case spec
