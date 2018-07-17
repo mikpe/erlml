@@ -39,9 +39,10 @@ signature BASIS =
 
     datatype basis    = BASIS of sigenv * env (* TODO: add FunEnv *)
 
-    (* map top-level VIds to the structures in which they are bound, and their status;
+    (* map top-level VIds to the structures in which they are bound, and their
+       type schemes and identifier statuses;
        for primitives we use the proxy structure $PRIMITIVE *)
-    val toplevelValEnv : (ident, longid * idstatus) Dict.dict
+    val toplevelValEnv : (ident, longid * Types.tyscheme * idstatus) Dict.dict
 
     val funTyname : Types.tyname
     val toplevelTyEnv : (ident, tystr) Dict.dict

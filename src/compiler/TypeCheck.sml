@@ -73,7 +73,7 @@ structure TypeCheck : TYPE_CHECK =
        of NONE =>
           (case Dict.find(Basis.toplevelValEnv, vid)
 	    of NONE => NONE
-	     | SOME(longvid, idstatus) => SOME(SOME longvid, idstatus))
+	     | SOME(longvid, sigma, idstatus) => SOME(SOME longvid, idstatus)) (* TODO: return sigma *)
 	| SOME(sigma, idstatus) => SOME(NONE, idstatus) (* TODO: return sigma *)
 
     fun lookupLongVid(env, Absyn.LONGID([], vid)) =

@@ -90,6 +90,19 @@ structure Basis : BASIS =
     val alphaOptionTy = Types.CONS([alphaTy], optionTyname)
     val orderTy = Types.CONS([], orderTyname)
     val outstreamTy = Types.CONS([], outstreamTyname)
+    val eqAlpha = Types.RIGID "'a" (* 'a *)
+    val eqAlphaTy = Types.VAR eqAlpha
+    val numtextAlpha =
+	let val tynames = [ wordTyname
+			  , intTyname
+			  , realTyname
+			  , stringTyname
+			  , charTyname
+			  ]
+	in
+	  Types.FREE(Types.ALPHA{level = 0, eq = false, ovld = SOME tynames, subst = ref NONE})
+	end
+    val numtextTy = Types.VAR numtextAlpha
 
     fun tup2ty(ty1, ty2) = Types.REC(Types.RECORD{fields = [(Types.INTlab 1, ty1), (Types.INTlab 2, ty2)], subst = NONE})
     fun funty(dom, ran) = Types.CONS([dom, ran], funTyname)
@@ -103,16 +116,21 @@ structure Basis : BASIS =
 	  ]))
 
     val toplevelValEnv =
-	Dict.fromList(identCompare,
-		      [ ("true", (LONGID([stridPrimitive], "true"), CON false))
-		      , ("false", (LONGID([stridPrimitive], "false"), CON false))
-		      , ("NONE", (LONGID(["Option"], "NONE"), CON false))
-		      , ("SOME", (LONGID(["Option"], "SOME"), CON true))
-		      , ("nil", (LONGID([stridPrimitive], "nil"), CON false))
-		      , ("::", (LONGID([stridPrimitive], "::"), CON true))
-		      , ("=", (LONGID([stridPrimitive], "="), VAL))
-		      , ("<", (LONGID([stridPrimitive], "<"), VAL))
-		     ])
+	Dict.fromList(
+	  identCompare,
+	  [ ("true", (LONGID([stridPrimitive], "true"), clos boolTy, CON false))
+	  , ("false", (LONGID([stridPrimitive], "false"), clos boolTy, CON false))
+	  , ("NONE", (LONGID(["Option"], "NONE"), clos alphaOptionTy, CON false))
+	  , ("SOME", (LONGID(["Option"], "SOME"), clos(funty(alphaTy, alphaOptionTy)), CON true))
+	  , ("nil", (LONGID([stridPrimitive], "nil"), clos alphaListTy, CON false))
+	  , ("::", (LONGID([stridPrimitive], "::"), clos(funty(tup2ty(alphaTy, alphaListTy), alphaListTy)), CON true))
+	  , ("=", (LONGID([stridPrimitive], "="), clos(funty(tup2ty(eqAlphaTy, eqAlphaTy), boolTy)), VAL))
+	  , ("<", (LONGID([stridPrimitive], "<"), clos(funty(tup2ty(numtextTy, numtextTy), boolTy)), VAL))
+	  , ("ref", (LONGID([stridPrimitive], "ref"), clos(funty(alphaTy, alphaListTy)), CON true))
+	  , ("LESS", (LONGID([stridPrimitive], "LESS"), clos orderTy, CON false))
+	  , ("EQUAL", (LONGID([stridPrimitive], "EQUAL"), clos orderTy, CON false))
+	  , ("GREATER", (LONGID([stridPrimitive], "GREATER"), clos orderTy, CON false))
+	])
 
     val toplevelTyEnv =
 	Dict.fromList(
