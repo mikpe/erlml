@@ -26,7 +26,7 @@ signature BASIS =
     datatype idstatus = CON of bool (* hasarg? *)
 		      | EXN of bool (* hasarg? *)
 		      | VAL
-    datatype valenv   = VE of (ident, idstatus) Dict.dict (* TODO: add TypeScheme *)
+    datatype valenv   = VE of (ident, (Types.tyscheme * idstatus)) Dict.dict
 
     datatype tystr    = TYSTR of Types.tyfcn * valenv
     datatype tyenv    = TE of (ident, tystr) Dict.dict

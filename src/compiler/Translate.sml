@@ -225,7 +225,7 @@ structure Translate : TRANSLATE =
 	 CoreErlang.FUN([var], callErlang("get_module_info", [modExp, CoreErlang.E_VARIABLE var])))
       end
 
-    fun veToFunDef strid (vid, idstatus, fundefs) =
+    fun veToFunDef strid (vid, (sigma, idstatus), fundefs) = (* TODO: use sigma? *)
       case idstatus
        of Basis.VAL =>
 	  let val vidkey = CoreErlang.E_TUPLE[CoreErlang.E_LITERAL(CoreErlang.L_ATOM strid),

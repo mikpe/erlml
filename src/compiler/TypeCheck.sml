@@ -74,7 +74,7 @@ structure TypeCheck : TYPE_CHECK =
           (case Dict.find(Basis.toplevelValEnv, vid)
 	    of NONE => NONE
 	     | SOME(longvid, idstatus) => SOME(SOME longvid, idstatus))
-	| SOME idstatus => SOME(NONE, idstatus)
+	| SOME(sigma, idstatus) => SOME(NONE, idstatus) (* TODO: return sigma *)
 
     fun lookupLongVid(env, Absyn.LONGID([], vid)) =
         (case lookupVid(env, vid)
@@ -85,17 +85,23 @@ structure TypeCheck : TYPE_CHECK =
 	    val (Basis.E(_, _, Basis.VE dict), revpfx) = List.foldl lookupNextStrId (env, [strid]) strids
 	in
           case Dict.find(dict, vid)
-	   of SOME idstatus => (NONE, idstatus)
+	   of SOME(sigma, idstatus) => (NONE, idstatus) (* TODO: return sigma *)
 	    | NONE => unboundVid(List.rev revpfx, vid)
 	end
 
-    fun veBindVid(Basis.VE dict, vid, idstatus) = (* VE+{vid->idstatus}, but checks vid not in Dom(VE) *)
+    fun veBindVid'(Basis.VE dict, vid, sigma, idstatus) = (* VE+{vid->idstatus}, but checks vid not in Dom(VE) *)
       case Dict.find(dict, vid)
-       of NONE => Basis.VE(Dict.insert(dict, vid, idstatus))
+       of NONE => Basis.VE(Dict.insert(dict, vid, (sigma, idstatus)))
 	| SOME _ => error("vid " ^ vid ^ " already bound")
 
+    fun veBindVid(VE, vid, idstatus) = (* TODO: replace with veBindVid' *)
+      let val sigma = Types.genNone(Types.REC(Types.RECORD{fields = [], subst = NONE}))
+      in
+	veBindVid'(VE, vid, sigma, idstatus)
+      end
+
     fun vePlusVE(VE, Basis.VE VE') = (* VE+VE', but checks Dom(VE) and Dom(VE') are disjoint *)
-      let fun bind(vid, idstatus, VE) = veBindVid(VE, vid, idstatus)
+      let fun bind(vid, (sigma, idstatus), VE) = veBindVid(VE, vid, idstatus) (* TODO: don't discard sigma *)
       in
 	Dict.fold(bind, VE, VE')
       end

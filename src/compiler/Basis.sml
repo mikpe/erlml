@@ -26,7 +26,7 @@ structure Basis : BASIS =
     datatype idstatus = CON of bool (* hasarg? *)
 		      | EXN of bool (* hasarg? *)
 		      | VAL
-    datatype valenv   = VE of (ident, idstatus) Dict.dict (* TODO: add TypeScheme *)
+    datatype valenv   = VE of (ident, (Types.tyscheme * idstatus)) Dict.dict
 
     datatype tystr    = TYSTR of Types.tyfcn * valenv
     datatype tyenv    = TE of (ident, tystr) Dict.dict
@@ -91,7 +91,16 @@ structure Basis : BASIS =
     val orderTy = Types.CONS([], orderTyname)
     val outstreamTy = Types.CONS([], outstreamTyname)
 
-    val veTextIO = VE(Dict.fromList(identCompare, [("output", VAL), ("stdOut", VAL)]))
+    fun tup2ty(ty1, ty2) = Types.REC(Types.RECORD{fields = [(Types.INTlab 1, ty1), (Types.INTlab 2, ty2)], subst = NONE})
+    fun funty(dom, ran) = Types.CONS([dom, ran], funTyname)
+    fun clos ty = Types.genAll ty
+
+    val veTextIO =
+	VE(Dict.fromList(
+	      identCompare,
+	      [ ("output", (clos(funty(tup2ty(outstreamTy, stringTy), unitTy)), VAL))
+	      , ("stdOut", (Types.genNone outstreamTy, VAL))
+	  ]))
 
     val toplevelValEnv =
 	Dict.fromList(identCompare,
@@ -106,23 +115,49 @@ structure Basis : BASIS =
 		     ])
 
     val toplevelTyEnv =
-      Dict.fromList(identCompare,
-		    [ ("unit", TYSTR(Types.lambda([], unitTy), emptyVE))
-		    , ("bool", TYSTR(Types.lambda([], boolTy), VE(Dict.fromList(identCompare, [("true", CON false), ("false", CON false)]))))
-		    , ("int", TYSTR(Types.lambda([], intTy), emptyVE))
-		    , ("word", TYSTR(Types.lambda([], wordTy), emptyVE))
-		    , ("real", TYSTR(Types.lambda([], realTy), emptyVE))
-		    , ("string", TYSTR(Types.lambda([], stringTy), emptyVE))
-		    , ("char", TYSTR(Types.lambda([], charTy), emptyVE))
-		    , ("list", TYSTR(Types.lambda([alpha], alphaListTy), VE(Dict.fromList(identCompare, [("nil", CON false), ("::", CON true)]))))
-		    , ("ref", TYSTR(Types.lambda([alpha], alphaRefTy), VE(Dict.fromList(identCompare, [("ref", CON true)]))))
-		    , ("exn", TYSTR(Types.lambda([], exnTy), emptyVE))
-		    , ("substring", TYSTR(Types.lambda([], substringTy), emptyVE))
-		    , ("array", TYSTR(Types.lambda([alpha], alphaArrayTy), emptyVE))
-		    , ("vector", TYSTR(Types.lambda([alpha], alphaVectorTy), emptyVE))
-		    , ("option", TYSTR(Types.lambda([alpha], alphaOptionTy), VE(Dict.fromList(identCompare, [("NONE", CON false), ("SOME", CON true)]))))
-		    , ("order", TYSTR(Types.lambda([], orderTy), VE(Dict.fromList(identCompare, [("LESS", CON false), ("EQUAL", CON false), ("GREATER", CON false)]))))
-		    ])
+	Dict.fromList(
+	  identCompare,
+	  [ ("unit", TYSTR(Types.lambda([], unitTy), emptyVE))
+	  , ("bool", TYSTR(Types.lambda([], boolTy),
+			   VE(Dict.fromList(
+				 identCompare,
+				 [ ("true", (clos boolTy, CON false))
+				 , ("false", (clos boolTy, CON false))
+	    ]))))
+	  , ("int", TYSTR(Types.lambda([], intTy), emptyVE))
+	  , ("word", TYSTR(Types.lambda([], wordTy), emptyVE))
+	  , ("real", TYSTR(Types.lambda([], realTy), emptyVE))
+	  , ("string", TYSTR(Types.lambda([], stringTy), emptyVE))
+	  , ("char", TYSTR(Types.lambda([], charTy), emptyVE))
+	  , ("list", TYSTR(Types.lambda([alpha], alphaListTy),
+			   VE(Dict.fromList(
+				 identCompare,
+				 [ ("nil", (clos alphaListTy, CON false))
+				 , ("::", (clos(funty(tup2ty(alphaTy, alphaListTy), alphaListTy)), CON true))
+	    ]))))
+	  , ("ref", TYSTR(Types.lambda([alpha], alphaRefTy),
+			  VE(Dict.fromList(
+				identCompare,
+				[ ("ref", (clos(funty(alphaTy, alphaRefTy)), CON true))
+	    ]))))
+	  , ("exn", TYSTR(Types.lambda([], exnTy), emptyVE))
+	  , ("substring", TYSTR(Types.lambda([], substringTy), emptyVE))
+	  , ("array", TYSTR(Types.lambda([alpha], alphaArrayTy), emptyVE))
+	  , ("vector", TYSTR(Types.lambda([alpha], alphaVectorTy), emptyVE))
+	  , ("option", TYSTR(Types.lambda([alpha], alphaOptionTy),
+			     VE(Dict.fromList(
+				   identCompare,
+				   [ ("NONE", (clos alphaOptionTy, CON false))
+				   , ("SOME", (clos(funty(alphaTy, alphaOptionTy)), CON true))
+	    ]))))
+	  , ("order", TYSTR(Types.lambda([], orderTy),
+			    VE(Dict.fromList(
+				  identCompare,
+				  [ ("LESS", (clos orderTy, CON false))
+				  , ("EQUAL", (clos orderTy, CON false))
+				  , ("GREATER", (clos orderTy, CON false))
+	    ]))))
+	])
 
     val initialSigEnv = emptySIGE
     val initialValEnv = emptyVE
@@ -518,11 +553,28 @@ structure Basis : BASIS =
 	Types.lambda(List.tabulate(arity, mktyvar), ty)
       end
 
+    (* I/O of (assumed to be closed) type schemes *)
+
+    fun writeTyscheme(os, tyscheme) =
+      let val (_, ty) = Types.instFree(tyscheme, 0)
+	  val _ = writeType(os, ty, alphaMapEmpty)
+      in
+	()
+      end
+
+    fun readTyscheme is =
+      let val (ty, _) = readType(is, alphaMapEmpty)
+      in
+	Types.genAll ty
+      end
+
     (* I/O of valenv *)
 
-    fun writeValenvMapping(vid, idStatus, os) =
+    fun writeValenvMapping(vid, (tyscheme, idStatus), os) =
       (TextIO.output1(os, #"{");
        writeIdent(os, vid);
+       TextIO.output1(os, #" ");
+       writeTyscheme(os, tyscheme);
        TextIO.output1(os, #" ");
        writeIdStatus(os, idStatus);
        TextIO.output1(os, #"}");
@@ -532,10 +584,12 @@ structure Basis : BASIS =
       let val _ = readChar(is, #"{")
 	  val vid = readIdent is
 	  val _ = readChar(is, #" ")
+	  val tyscheme = readTyscheme is
+	  val _ = readChar(is, #" ")
 	  val idStatus = readIdStatus is
 	  val _ = readChar(is, #"}")
       in
-	Dict.insert(dict, vid, idStatus)
+	Dict.insert(dict, vid, (tyscheme, idStatus))
       end
 
     fun writeValenv(os, VE dict) =
