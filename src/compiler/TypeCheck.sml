@@ -101,7 +101,7 @@ structure TypeCheck : TYPE_CHECK =
       end
 
     fun vePlusVE(VE, Basis.VE VE') = (* VE+VE', but checks Dom(VE) and Dom(VE') are disjoint *)
-      let fun bind(vid, (sigma, idstatus), VE) = veBindVid(VE, vid, idstatus) (* TODO: don't discard sigma *)
+      let fun bind(vid, (sigma, idstatus), VE) = veBindVid'(VE, vid, sigma, idstatus)
       in
 	Dict.fold(bind, VE, VE')
       end
@@ -163,12 +163,14 @@ structure TypeCheck : TYPE_CHECK =
 	   | (l1, _) :: rest => loop(l1, rest)
       end
 
+    fun funTy(dom, ran) = Types.CONS([dom, ran], Basis.funTyname)
+
     fun elabTy(C, ty) = (* C |- ty => tau *)
       case ty
        of Absyn.VARty tyvar => Types.VAR(Types.RIGID tyvar)
 	| Absyn.RECty tyrow => elabTyRow(C, tyrow)
 	| Absyn.CONSty(tyseq, longtycon) => elabConsTy(C, tyseq, longtycon)
-	| Absyn.FUNty(ty, ty') => Types.CONS([elabTy(C, ty), elabTy(C, ty')], Basis.funTyname)
+	| Absyn.FUNty(ty, ty') => funTy(elabTy(C, ty), elabTy(C, ty'))
 
     and elabTyRow(C, tyrow) =
       let fun elabField(label, ty) = (label, elabTy(C, ty))
@@ -333,11 +335,19 @@ structure TypeCheck : TYPE_CHECK =
       let val _ = checkConbindVid vid
       in
 	case tyOpt
-	 of NONE => (veBindVid(VE, vid, Basis.CON false), taus)
+	 of NONE =>
+	    (* Strictly speaking this genAll should be a genNone (29), followed by
+	       a dummy instantiation and a genAll in elabDatbind'' (28).  Doing a
+	       genAll here is simpler and has the same effect.  *)
+	    let val sigma = Types.genAll tau
+	    in
+	      (veBindVid'(VE, vid, sigma, Basis.CON false), taus)
+	    end
 	  | SOME ty =>
 	    let val tau' = elabTy(C, ty)
+		val sigma = Types.genAll(funTy(tau', tau))
 	    in
-	      (veBindVid(VE, vid, Basis.CON true), tau' :: taus)
+	      (veBindVid'(VE, vid, sigma, Basis.CON true), tau' :: taus)
 	    end
       end
 
@@ -411,15 +421,17 @@ structure TypeCheck : TYPE_CHECK =
 
     fun elabExBind' C (exb, VE) =
       case exb
-       of Absyn.CONexb vid => veBindVid(VE, vid, Basis.EXN false)
+       of Absyn.CONexb vid => veBindVid'(VE, vid, Types.genNone Basis.exnTy, Basis.EXN false)
 	| Absyn.OFexb(vid, ty) =>
+	  (* This genNone is correct, see (20) and its comment.  *)
 	  let val tau = elabTy(C, ty)
+	      val sigma = Types.genNone(funTy(tau, Basis.exnTy))
 	  in
-	    veBindVid(VE, vid, Basis.EXN true)
+	    veBindVid'(VE, vid, sigma, Basis.EXN true)
 	  end
 	| Absyn.EQexb(vid, longvid) =>
-	  case #3(lookupLongVid(C, longvid))
-	   of idstatus as Basis.EXN _ => veBindVid(VE, vid, idstatus)
+	  case lookupLongVid(C, longvid)
+	   of (_, sigma, idstatus as Basis.EXN _) => veBindVid'(VE, vid, sigma, idstatus)
 	    | _ => error "exception aliasing non-exception"
 
     fun elabExBind(C, exbind) = (* C |- exbind => VE *)
