@@ -40,6 +40,11 @@ signature BASIS =
     datatype basis    = BASIS of sigenv * env (* TODO: add FunEnv *)
 
     val exnTy : Types.ty
+    val intTy : Types.ty
+    val wordTy : Types.ty
+    val realTy : Types.ty
+    val stringTy : Types.ty
+    val charTy : Types.ty
 
     (* map top-level VIds to the structures in which they are bound, and their
        type schemes and identifier statuses;
