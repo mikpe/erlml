@@ -73,19 +73,19 @@ structure TypeCheck : TYPE_CHECK =
        of NONE =>
           (case Dict.find(Basis.toplevelValEnv, vid)
 	    of NONE => NONE
-	     | SOME(longvid, sigma, idstatus) => SOME(SOME longvid, idstatus)) (* TODO: return sigma *)
-	| SOME(sigma, idstatus) => SOME(NONE, idstatus) (* TODO: return sigma *)
+	     | SOME(longvid, sigma, idstatus) => SOME(SOME longvid, sigma, idstatus))
+	| SOME(sigma, idstatus) => SOME(NONE, sigma, idstatus)
 
     fun lookupLongVid(env, Absyn.LONGID([], vid)) =
         (case lookupVid(env, vid)
-	  of SOME(longVidOpt, idstatus) => (longVidOpt, idstatus)
+	  of SOME(longVidOpt, sigma, idstatus) => (longVidOpt, sigma, idstatus)
 	   | NONE => unboundVid([], vid))
       | lookupLongVid(env, Absyn.LONGID(strid :: strids, vid)) =
 	let val env = lookupFirstStrId(env, strid)
 	    val (Basis.E(_, _, Basis.VE dict), revpfx) = List.foldl lookupNextStrId (env, [strid]) strids
 	in
           case Dict.find(dict, vid)
-	   of SOME(sigma, idstatus) => (NONE, idstatus) (* TODO: return sigma *)
+	   of SOME(sigma, idstatus) => (NONE, sigma, idstatus)
 	    | NONE => unboundVid(List.rev revpfx, vid)
 	end
 
@@ -197,9 +197,9 @@ structure TypeCheck : TYPE_CHECK =
 	  (case longid
 	    of Absyn.LONGID([], vid) =>
 	       (case lookupVid(C, vid)
-		 of SOME(_, idstatus) => (refOptIdStatus := SOME idstatus; VE)
+		 of SOME(_, _, idstatus) => (refOptIdStatus := SOME idstatus; VE)
 		  | NONE => (refOptIdStatus := SOME Basis.VAL; veBindVid(VE, vid, Basis.VAL)))
-	     | _ => (refOptIdStatus := SOME(#2(lookupLongVid(C, longid))); VE))
+	     | _ => (refOptIdStatus := SOME(#3(lookupLongVid(C, longid))); VE))
 	| Absyn.RECpat(row, false) => checkPatRow(C, row, VE)
 	| Absyn.RECpat(_, true) => nyi "flexible record patterns"
 	| Absyn.CONSpat(_, pat) => checkPat(C, pat, VE)
@@ -207,8 +207,8 @@ structure TypeCheck : TYPE_CHECK =
 	| Absyn.ASpat(vid, pat) =>
 	  (case lookupVid(C, vid)
 	    of NONE => ()
-	     | SOME(_, Basis.VAL) => ()
-	     | SOME(_, _) => error("vid " ^ vid ^ " is a constructor");
+	     | SOME(_, _, Basis.VAL) => ()
+	     | SOME(_, _, _) => error("vid " ^ vid ^ " is a constructor");
 	   checkPat(C, pat, veBindVid(VE, vid, Basis.VAL)))
 
     and checkPatRow(C, row, VE) = (* C |- patrow => (VE,rho) *)
@@ -418,7 +418,7 @@ structure TypeCheck : TYPE_CHECK =
 	    veBindVid(VE, vid, Basis.EXN true)
 	  end
 	| Absyn.EQexb(vid, longvid) =>
-	  case #2(lookupLongVid(C, longvid))
+	  case #3(lookupLongVid(C, longvid))
 	   of idstatus as Basis.EXN _ => veBindVid(VE, vid, idstatus)
 	    | _ => error "exception aliasing non-exception"
 
@@ -436,7 +436,7 @@ structure TypeCheck : TYPE_CHECK =
        of Absyn.SCONexp _ => ()
 	| Absyn.VIDexp(refLongVid, refOptIdStatus) =>
 	  let val longvid = !refLongVid
-	      val (longvidOpt, idstatus) = lookupLongVid(env, longvid)
+	      val (longvidOpt, _, idstatus) = lookupLongVid(env, longvid)
 	      val _ = refOptIdStatus := SOME idstatus
 	  in
 	    case longvidOpt
