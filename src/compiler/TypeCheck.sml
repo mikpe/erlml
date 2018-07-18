@@ -37,8 +37,11 @@ structure TypeCheck : TYPE_CHECK =
       (* TODO: path for basis files? *)
       SOME(Basis.read(id ^ ext ^ ".basis")) handle _ => NONE
 
+    fun longIdToString'(strids, id) = String.concatWith "." (strids @ [id])
+    fun longIdToString(Absyn.LONGID(strids, id)) = longIdToString'(strids, id)
+
     fun unbound(kind, strids, id) =
-      error("unbound " ^ kind ^ " " ^ String.concatWith "." (strids @ [id]))
+      error("unbound " ^ kind ^ " " ^ longIdToString'(strids, id))
     fun unboundVid(strids, vid) = unbound("vid", strids, vid)
     fun unboundStrId(strids, strid) = unbound("strid", strids, strid)
     fun unboundTyCon(strids, tycon) = unbound("tycon", strids, tycon)
@@ -188,43 +191,110 @@ structure TypeCheck : TYPE_CHECK =
       end
 
     (*
-     * PATTERNS
+     * Special Constants
      *)
 
-    fun checkPat(C, pat, VE) = (* C |- pat => (VE,tau) *)
+    fun sconType scon = (* type(scon) *)
+      case scon
+       of Absyn.INTsc _ => Basis.intTy
+	| Absyn.WORDsc _ => Basis.wordTy
+	| Absyn.REALsc _ => Basis.realTy
+	| Absyn.STRINGsc _ => Basis.stringTy
+	| Absyn.CHARsc _ => Basis.charTy
+
+    (*
+     * Patterns
+     *)
+
+    fun elabPat(C, level, VE, pat) = (* C |- pat => (VE,tau) *)
       case pat
-       of Absyn.WILDpat => VE
-	| Absyn.SCONpat _ => VE
-	| Absyn.VIDpat(longid, refOptIdStatus) =>
-	  (case longid
-	    of Absyn.LONGID([], vid) =>
-	       (case lookupVid(C, vid)
-		 of SOME(_, _, idstatus) => (refOptIdStatus := SOME idstatus; VE)
-		  | NONE => (refOptIdStatus := SOME Basis.VAL; veBindVid(VE, vid, Basis.VAL)))
-	     | _ => (refOptIdStatus := SOME(#3(lookupLongVid(C, longid))); VE))
-	| Absyn.RECpat(row, false) => checkPatRow(C, row, VE)
-	| Absyn.RECpat(_, true) => nyi "flexible record patterns"
-	| Absyn.CONSpat(_, pat) => checkPat(C, pat, VE)
-	| Absyn.TYPEDpat(pat, _) => checkPat(C, pat, VE)
+       of Absyn.WILDpat => (* 32 *)
+	  let val tau = Types.VAR(Types.mkFreeTyvar level)
+	  in
+	    (VE, tau)
+	  end
+	| Absyn.SCONpat scon => (VE, sconType scon) (* 33 *)
+	| Absyn.VIDpat(longvid, refOptIdStatus) => (* (34) or (35) *)
+	  let fun v vid = (* 34 *)
+		let val tau = Types.VAR(Types.mkFreeTyvar level)
+		    val sigma = Types.genNone tau
+		    val _ = refOptIdStatus := SOME Basis.VAL
+		in
+		  (veBindVid'(VE, vid, sigma, Basis.VAL), tau)
+		end
+	      fun cOrE(sigma, is) = (* 35 *)
+		let val _ = refOptIdStatus := SOME is
+		    val (_, tau) = Types.instFree(sigma, level)
+		in
+		  (VE, tau)
+		end
+	  in
+	    case longvid
+	     of Absyn.LONGID([], vid) =>
+		(case lookupVid(C, vid)
+		  of NONE => v vid
+		   | SOME(_, _, Basis.VAL) => v vid
+		   | SOME(_, sigma, is as Basis.CON _) => cOrE(sigma, is)
+		   | SOME(_, sigma, is as Basis.EXN _) => cOrE(sigma, is))
+	     | _ =>
+	       let val (_, sigma, is) = lookupLongVid(C, longvid)
+		   val _ = case is
+			    of Basis.VAL => error("longvid " ^ longIdToString longvid ^ " in pattern is a variable")
+			     | _ => ()
+	       in
+		 cOrE(sigma, is)
+	       end
+	  end
+	| Absyn.RECpat(patrow, flexP) =>
+	  let val (VE, rho) = elabPatrow(C, level, VE, patrow, flexP)
+	  in
+	    (VE, Types.REC rho)
+	  end
+	| Absyn.CONSpat(longvid, pat) =>
+	  let val (_, sigma, is) = lookupLongVid(C, longvid)
+	      val _ = case is
+		       of Basis.VAL => error("longvid " ^ longIdToString longvid ^ " in pattern is a variable")
+			| _ => ()
+	      val (VE, tau') = elabPat(C, level, VE, pat)
+	      val tau = Types.VAR(Types.mkFreeTyvar level)
+	      val (_, tau'') = Types.instFree(sigma, level)
+	      val _ = Unify.unify(tau'', funTy(tau', tau))
+	  in
+	    (VE, tau)
+	  end
+	| Absyn.TYPEDpat(pat, ty) =>
+	  let val (VE, tau) = elabPat(C, level, VE, pat)
+	      val tau' = elabTy(C, ty)
+	      val _ = Unify.unify(tau, tau')
+	  in
+	    (VE, tau)
+	  end
 	| Absyn.ASpat(vid, pat) =>
-	  (case lookupVid(C, vid)
-	    of NONE => ()
-	     | SOME(_, _, Basis.VAL) => ()
-	     | SOME(_, _, _) => error("vid " ^ vid ^ " is a constructor");
-	   checkPat(C, pat, veBindVid(VE, vid, Basis.VAL)))
+	  let val _ = case lookupVid(C, vid)
+		       of NONE => ()
+			| SOME(_, _, Basis.VAL) => ()
+			| SOME(_, _, _) => error("vid " ^ vid ^ " is a constructor")
+	      val (VE, tau) = elabPat(C, level, VE, pat)
+	      val sigma = Types.genNone tau
+	  in
+	    (veBindVid'(VE, vid, sigma, Basis.VAL), tau)
+	  end
 
-    and checkPatRow(C, row, VE) = (* C |- patrow => (VE,rho) *)
-      let val (VE, _) = List.foldl (checkPatRowField C) (VE, []) row
+    and elabPatrow(C, level, VE, patrow, flexP) = (* C |- patrow => (VE,rho) *)
+      let val (VE, rho) = List.foldl (elabPatrowField C level) (VE, []) patrow
+	  val rho = Types.sortFields rho
+	  val _ = checkRho rho
       in
-	VE
+	(VE, Types.mkRecord(rho, flexP))
       end
 
-    and checkPatRowField C ((lab, pat), (VE, labels)) =
-      let val VE = checkPat(C, pat, VE)
+    and elabPatrowField C level ((label, pat), (VE, rho)) =
+      let val (VE, tau) = elabPat(C, level, VE, pat)
       in
-	if Util.member(lab, labels) then error("label " ^ labelToString lab ^ " already bound")
-	else (VE, lab :: labels)
+	(VE, (label, tau) :: rho)
       end
+
+    fun checkPat(C, pat, VE) = #1(elabPat(C, 0, VE, pat)) (* TODO: replace by elabPat *)
 
     (*
      * Type Bindings
