@@ -294,8 +294,6 @@ structure TypeCheck : TYPE_CHECK =
 	(VE, (label, tau) :: rho)
       end
 
-    fun checkPat(C, pat, VE) = #1(elabPat(C, 0, Types.genNone, VE, pat)) (* TODO: replace by elabPat *)
-
     (*
      * Type Bindings
      *
@@ -508,86 +506,224 @@ structure TypeCheck : TYPE_CHECK =
       List.foldl (elabExBind' C) Basis.emptyVE exbind
 
     (*
-     * EXPRESSIONS
+     * 4.7 Non-expansive Expressions
      *)
 
-    fun checkLetRecPat C ((pat, _), VE) = checkPat(C, pat, VE)
-
-    fun checkExp(env, exp) =
+    fun isConexp(C, exp) =
       case exp
-       of Absyn.SCONexp _ => ()
-	| Absyn.VIDexp(refLongVid, refOptIdStatus) =>
+       of Absyn.TYPEDexp(exp, _) => isConexp(C, exp)
+	| Absyn.VIDexp(refLongVid, _) =>
 	  let val longvid = !refLongVid
-	      val (longvidOpt, _, idstatus) = lookupLongVid(env, longvid)
-	      val _ = refOptIdStatus := SOME idstatus
 	  in
-	    case longvidOpt
-	     of NONE => ()
-	      | SOME longvid' =>
-		if longvid = longvid' then ()
-		else refLongVid := longvid'
+	    case longvid
+	     of Absyn.LONGID([], "ref") => false
+	      | _ =>
+		let val (_, _, is) = lookupLongVid(C, longvid)
+		in
+		  case is
+		   of Basis.CON _ => true
+		    | Basis.EXN _ => true
+		    | Basis.VAL => false
+		end
 	  end
-	| Absyn.RECexp row => List.app (checkFieldExp env) row
-	| Absyn.LETexp(dec, exp) => checkExp(cPlusE(env, checkDec(env, dec)), exp)
-	| Absyn.APPexp(f, arg) => (checkExp(env, f); checkExp(env, arg))
-	| Absyn.TYPEDexp(exp, _) => checkExp(env, exp)
-	| Absyn.HANDLEexp(exp, match) => (checkExp(env, exp); checkMatch(env, match))
-	| Absyn.RAISEexp exp => checkExp(env, exp)
-	| Absyn.FNexp match => checkMatch(env, match)
+	| _ => false
 
-    and checkFieldExp env (_, exp) = checkExp(env, exp)
+    fun isNexp(C, exp) =
+      case exp
+       of Absyn.SCONexp _ => true
+	| Absyn.VIDexp _ => true
+	| Absyn.RECexp exprow => List.all (isNexpField C) exprow
+	| Absyn.LETexp _ => false
+	| Absyn.APPexp(f, arg) => isConexp(C, f) andalso isNexp(C, arg)
+	| Absyn.TYPEDexp(exp, _) => isNexp(C, exp)
+	| Absyn.HANDLEexp _ => false
+	| Absyn.RAISEexp _ => false
+	| Absyn.FNexp _ => true
 
-    and checkMatch(C, Absyn.MATCH mrules) = (* C |- match => tau *)
-      List.app (checkMrule C) mrules
+    and isNexpField C (_, exp) = isNexp(C, exp)
 
-    and checkMrule C (pat, exp) = (* C |- mrule => tau *)
-      let val VE = checkPat(C, pat, Basis.emptyVE)
+    (*
+     * Expressions
+     *)
+
+    fun elabValRecPat C level ((pat, match), (VE, recs')) =
+      let val (VE, tau) = elabPat(C, level, Types.genNone, VE, pat)
       in
-	checkExp(cPlusVE(C, VE), exp)
+	(VE, (tau, match) :: recs')
       end
 
-    and checkDec(C, Absyn.DEC decs) = (* C |- dec => E *)
-      List.foldl (checkDec' C) Basis.emptyEnv decs
+    fun closVE(level, Basis.VE dict) =
+      let fun clos(vid, (sigma, is), VE) =
+	    let val (_, tau) = Types.instRigid sigma
+		val sigma = Types.genLimit(tau, level)
+	    in
+	      veBindVid'(VE, vid, sigma, is)
+	    end
+      in
+	Dict.fold(clos, Basis.emptyVE, dict)
+      end
 
-    and checkDec' C (dec, E) =
+    fun elabExp(C, level, exp) = (* C |- exp => tau *)
+      case exp
+       of Absyn.SCONexp scon => sconType scon (* 1 *)
+	| Absyn.VIDexp(refLongVid, refOptIdStatus) => (* 2 *)
+	  let val longvid = !refLongVid
+	      val (longvidOpt, sigma, is) = lookupLongVid(C, longvid)
+	      val _ = refOptIdStatus := SOME is
+	      val _ = case longvidOpt
+		       of NONE => ()
+			| SOME longvid' =>
+			  if longvid = longvid' then ()
+			  else refLongVid := longvid'
+	      val (_, tau) = Types.instFree(sigma, level)
+	  in
+	    tau
+	  end
+	| Absyn.RECexp exprow => (* 3 *)
+	  let val rho = elabExprow(C, level, exprow)
+	  in
+	    Types.REC rho
+	  end
+	| Absyn.LETexp(dec, exp) => (* 4 *)
+	  let val E = elabDec(C, level + 1, dec)
+	      val tau = elabExp(cPlusE(C, E), level, exp)
+	      (* TODO: "tynames tau <= T of C" side-condition *)
+	  in
+	    tau
+	  end
+	| Absyn.APPexp(f, arg) => (* 8 *)
+	  let val tau'' = elabExp(C, level, f)
+	      val tau' = elabExp(C, level, arg)
+	      val tau = Types.VAR(Types.mkFreeTyvar level)
+	      val _ = Unify.unify(tau'', funTy(tau', tau))
+	  in
+	    tau
+	  end
+	| Absyn.TYPEDexp(exp, ty) => (* 9 *)
+	  let val tau = elabExp(C, level, exp)
+	      val tau' = elabTy(C, ty)
+	      val _ = Unify.unify(tau, tau')
+	  in
+	    tau
+	  end
+	| Absyn.HANDLEexp(exp, match) => (* 10 *)
+	  let val tau = elabExp(C, level, exp)
+	      val tau' = elabMatch(C, level, match)
+	      val _ = Unify.unify(tau', funTy(Basis.exnTy, tau))
+	  in
+	    tau
+	  end
+	| Absyn.RAISEexp exp => (* 11 *)
+	  let val _ = Unify.unify(elabExp(C, level, exp), Basis.exnTy)
+	      val tau = Types.VAR(Types.mkFreeTyvar level)
+	  in
+	    tau
+	  end
+	| Absyn.FNexp match => (* 12 *)
+	  elabMatch(C, level, match)
+
+    and elabExprow(C, level, exprow) = (* C |- exprow => rho *)
+      let val rho = List.foldl (elabExpRowField C level) [] exprow
+	  val rho = Types.sortFields rho
+	  val _ = checkRho rho
+      in
+	Types.mkRecord(rho, false)
+      end
+
+    and elabExpRowField C level ((label, exp), rho) = (* 6 *)
+      let val tau = elabExp(C, level, exp)
+      in
+	(label, tau) :: rho
+      end
+
+    and elabMatch(C, level, Absyn.MATCH mrules) = (* C |- match => tau *)
+      case mrules
+       of mrule::mrules =>
+	  List.foldl (elabMrule' C level) (elabMrule(C, level, mrule)) mrules
+	| [] => raise TypeCheck
+
+    and elabMrule' C level (mrule, tau) = (* 13 *)
+      let val _ = Unify.unify(elabMrule(C, level, mrule), tau)
+      in
+	tau
+      end
+
+    and elabMrule(C, level, (pat, exp)) = (* C |- mrule => tau *) (* 14 *)
+      let val (VE, tau) = elabPat(C, level, Types.genNone, Basis.emptyVE, pat)
+	  val tau' = elabExp(cPlusVE(C, VE), level, exp)
+	  (* TODO: "tynames VE <= T of C" side-condition *)
+      in
+	funTy(tau, tau')
+      end
+
+    (*
+     * Declarations
+     *)
+
+    and elabDec(C, level, Absyn.DEC decs) = (* C |- dec => E *)
+      List.foldl (elabDec' C level) Basis.emptyEnv decs
+
+    and elabDec' C level (dec, E) =
       let val C = cPlusE(C, E)
       in
 	case dec
-	 of Absyn.VALdec(_, nonrecs, recs) => ePlusVE(E, checkValBind(C, nonrecs, recs))
-	  | Absyn.TYPEdec typbind => ePlusTE(E, elabTypBind(C, typbind))
-	  | Absyn.DATATYPEdec(datbind, typbind) =>
+	 of Absyn.VALdec(tyvarseqRef, nonrecs, recs) => (* 15 *)
+	    let val VE = elabValbind(C, level, nonrecs, recs)
+		(* Note: the closure is dony by elabValbind *)
+		(* TODO: handle tyvarseq correctly *)
+	    in
+	      ePlusVE(E, VE)
+	    end
+	  | Absyn.TYPEdec typbind => (* 16 *)
+	    let val TE = elabTypBind(C, typbind)
+	    in
+	      ePlusTE(E, TE)
+	    end
+	  | Absyn.DATATYPEdec(datbind, typbind) => (* 17 *)
 	    let val (VE, TE) = elabDatBind(C, datbind, typbind)
 	    in
 	      ePlusTE(ePlusVE(E, VE), TE)
 	    end
-	  | Absyn.DATAREPLdec(tycon, longtycon) =>
+	  | Absyn.DATAREPLdec(tycon, longtycon) => (* 18 *)
 	    let val Basis.TYSTR(tyfcn, VE) = lookupLongTyCon(C, longtycon)
 	    in
 	      ePlusTE(ePlusVE(E, VE), teBindTyCon(Basis.emptyTE, tycon, tyfcn, VE))
 	    end
-	  | Absyn.EXdec exbind => ePlusVE(E, elabExBind(C, exbind))
-	  | Absyn.LOCALdec(dec1, dec2) =>
-	    let val E1 = checkDec(C, dec1)
-		val E2 = checkDec(cPlusE(C, E1), dec2)
+	  | Absyn.EXdec exbind => (* 20 *)
+	    let val VE = elabExBind(C, exbind)
+	    in
+	      ePlusVE(E, VE)
+	    end
+	  | Absyn.LOCALdec(dec1, dec2) => (* 21 *)
+	    let val E1 = elabDec(C, level, dec1)
+		val E2 = elabDec(cPlusE(C, E1), level, dec2)
 	    in
 	      ePlusE(E, E2)
 	    end
-	  | _ => nyi "abstype or open <dec>"
+	  | _ => nyi "abstype or open <dec>" (* 19 *) (* 22 *)
       end
 
-    and checkValBind(C, nonrecs, recs) = (* C |- valbind => VE *)
-      checkLetRecs(C, recs, List.foldl (checkLetNonRec C) Basis.emptyVE nonrecs)
+    and elabValbind(C, level, nonrecs, recs) =
+      elabValRec(C, level, List.foldl (elabValNonRec C level) Basis.emptyVE nonrecs, recs)
 
-    and checkLetNonRec C ((pat, exp), VE) = (checkExp(C, exp); checkPat(C, pat, VE))
-
-    and checkLetRecs(C, recs, VE) =
-      let val VErec = List.foldl (checkLetRecPat C) Basis.emptyVE recs
-	  val _ = List.app (checkLetRecMatch (cPlusVE(C, VErec))) recs
+    and elabValNonRec C level ((pat, exp), VE) = (* 25 *)
+      let val gen = if isNexp(C, exp) then fn tau => Types.genLimit(tau, level) else Types.genNone
+	  val (VE, tau) = elabPat(C, level, gen, VE, pat)
+	  val tau' = elabExp(C, level, exp)
+	  val _ = Unify.unify(tau, tau')
       in
-	vePlusVE(VE, VErec)
+	VE
       end
 
-    and checkLetRecMatch C (_, match) = checkMatch(C, match)
+    and elabValRec(C, level, VE, recs) =
+      let val (VErec, recs') = List.foldl (elabValRecPat C level) (Basis.emptyVE, []) recs
+	  val _ = List.app (elabValRecMatch (cPlusVE(C, VErec)) level) recs'
+      in
+	vePlusVE(VE, closVE(level, VErec))
+      end
+
+    and elabValRecMatch C level (tau, match) =
+      Unify.unify(tau, elabMatch(C, level, match))
 
     (*
      * SPECIFICATIONS
@@ -695,7 +831,7 @@ structure TypeCheck : TYPE_CHECK =
 
     fun checkStrDec(B, Absyn.STRDEC[strdec]) = (* B |- strdec => E *)
         (case strdec
-	  of Absyn.DECstrdec dec => checkDec(cOfB B, dec)
+	  of Absyn.DECstrdec dec => elabDec(cOfB B, 0, dec)
 	   | Absyn.LOCALstrdec(strdec1, strdec2) =>
 	     let val E1 = checkStrDec(B, strdec1)
 		 val E2 = checkStrDec(bPlusE(B, E1), strdec2)
