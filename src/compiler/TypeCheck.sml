@@ -206,7 +206,7 @@ structure TypeCheck : TYPE_CHECK =
      * Patterns
      *)
 
-    fun elabPat(C, level, VE, pat) = (* C |- pat => (VE,tau) *)
+    fun elabPat(C, level, gen, VE, pat) = (* C |- pat => (VE,tau) *)
       case pat
        of Absyn.WILDpat => (* 32 *)
 	  let val tau = Types.VAR(Types.mkFreeTyvar level)
@@ -217,7 +217,7 @@ structure TypeCheck : TYPE_CHECK =
 	| Absyn.VIDpat(longvid, refOptIdStatus) => (* (34) or (35) *)
 	  let fun v vid = (* 34 *)
 		let val tau = Types.VAR(Types.mkFreeTyvar level)
-		    val sigma = Types.genNone tau
+		    val sigma = gen tau
 		    val _ = refOptIdStatus := SOME Basis.VAL
 		in
 		  (veBindVid'(VE, vid, sigma, Basis.VAL), tau)
@@ -246,7 +246,7 @@ structure TypeCheck : TYPE_CHECK =
 	       end
 	  end
 	| Absyn.RECpat(patrow, flexP) =>
-	  let val (VE, rho) = elabPatrow(C, level, VE, patrow, flexP)
+	  let val (VE, rho) = elabPatrow(C, level, gen, VE, patrow, flexP)
 	  in
 	    (VE, Types.REC rho)
 	  end
@@ -255,7 +255,7 @@ structure TypeCheck : TYPE_CHECK =
 	      val _ = case is
 		       of Basis.VAL => error("longvid " ^ longIdToString longvid ^ " in pattern is a variable")
 			| _ => ()
-	      val (VE, tau') = elabPat(C, level, VE, pat)
+	      val (VE, tau') = elabPat(C, level, gen, VE, pat)
 	      val tau = Types.VAR(Types.mkFreeTyvar level)
 	      val (_, tau'') = Types.instFree(sigma, level)
 	      val _ = Unify.unify(tau'', funTy(tau', tau))
@@ -263,7 +263,7 @@ structure TypeCheck : TYPE_CHECK =
 	    (VE, tau)
 	  end
 	| Absyn.TYPEDpat(pat, ty) =>
-	  let val (VE, tau) = elabPat(C, level, VE, pat)
+	  let val (VE, tau) = elabPat(C, level, gen, VE, pat)
 	      val tau' = elabTy(C, ty)
 	      val _ = Unify.unify(tau, tau')
 	  in
@@ -274,27 +274,27 @@ structure TypeCheck : TYPE_CHECK =
 		       of NONE => ()
 			| SOME(_, _, Basis.VAL) => ()
 			| SOME(_, _, _) => error("vid " ^ vid ^ " is a constructor")
-	      val (VE, tau) = elabPat(C, level, VE, pat)
-	      val sigma = Types.genNone tau
+	      val (VE, tau) = elabPat(C, level, gen, VE, pat)
+	      val sigma = gen tau
 	  in
 	    (veBindVid'(VE, vid, sigma, Basis.VAL), tau)
 	  end
 
-    and elabPatrow(C, level, VE, patrow, flexP) = (* C |- patrow => (VE,rho) *)
-      let val (VE, rho) = List.foldl (elabPatrowField C level) (VE, []) patrow
+    and elabPatrow(C, level, gen, VE, patrow, flexP) = (* C |- patrow => (VE,rho) *)
+      let val (VE, rho) = List.foldl (elabPatrowField C level gen) (VE, []) patrow
 	  val rho = Types.sortFields rho
 	  val _ = checkRho rho
       in
 	(VE, Types.mkRecord(rho, flexP))
       end
 
-    and elabPatrowField C level ((label, pat), (VE, rho)) =
-      let val (VE, tau) = elabPat(C, level, VE, pat)
+    and elabPatrowField C level gen ((label, pat), (VE, rho)) =
+      let val (VE, tau) = elabPat(C, level, gen, VE, pat)
       in
 	(VE, (label, tau) :: rho)
       end
 
-    fun checkPat(C, pat, VE) = #1(elabPat(C, 0, VE, pat)) (* TODO: replace by elabPat *)
+    fun checkPat(C, pat, VE) = #1(elabPat(C, 0, Types.genNone, VE, pat)) (* TODO: replace by elabPat *)
 
     (*
      * Type Bindings
