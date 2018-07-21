@@ -92,19 +92,13 @@ structure TypeCheck : TYPE_CHECK =
 	    | NONE => unboundVid(List.rev revpfx, vid)
 	end
 
-    fun veBindVid'(Basis.VE dict, vid, sigma, idstatus) = (* VE+{vid->idstatus}, but checks vid not in Dom(VE) *)
+    fun veBindVid(Basis.VE dict, vid, sigma, idstatus) = (* VE+{vid->idstatus}, but checks vid not in Dom(VE) *)
       case Dict.find(dict, vid)
        of NONE => Basis.VE(Dict.insert(dict, vid, (sigma, idstatus)))
 	| SOME _ => error("vid " ^ vid ^ " already bound")
 
-    fun veBindVid(VE, vid, idstatus) = (* TODO: replace with veBindVid' *)
-      let val sigma = Types.genNone(Types.REC(Types.RECORD{fields = [], subst = NONE}))
-      in
-	veBindVid'(VE, vid, sigma, idstatus)
-      end
-
     fun vePlusVE(VE, Basis.VE VE') = (* VE+VE', but checks Dom(VE) and Dom(VE') are disjoint *)
-      let fun bind(vid, (sigma, idstatus), VE) = veBindVid'(VE, vid, sigma, idstatus)
+      let fun bind(vid, (sigma, idstatus), VE) = veBindVid(VE, vid, sigma, idstatus)
       in
 	Dict.fold(bind, VE, VE')
       end
@@ -220,7 +214,7 @@ structure TypeCheck : TYPE_CHECK =
 		    val sigma = gen tau
 		    val _ = refOptIdStatus := SOME Basis.VAL
 		in
-		  (veBindVid'(VE, vid, sigma, Basis.VAL), tau)
+		  (veBindVid(VE, vid, sigma, Basis.VAL), tau)
 		end
 	      fun cOrE(sigma, is) = (* 35 *)
 		let val _ = refOptIdStatus := SOME is
@@ -277,7 +271,7 @@ structure TypeCheck : TYPE_CHECK =
 	      val (VE, tau) = elabPat(C, level, gen, VE, pat)
 	      val sigma = gen tau
 	  in
-	    (veBindVid'(VE, vid, sigma, Basis.VAL), tau)
+	    (veBindVid(VE, vid, sigma, Basis.VAL), tau)
 	  end
 
     and elabPatrow(C, level, gen, VE, patrow, flexP) = (* C |- patrow => (VE,rho) *)
@@ -405,7 +399,7 @@ structure TypeCheck : TYPE_CHECK =
       let val _ = if allowedCon vid then ()
 		  else error("invalid binding of " ^ vid)
       in
-	veBindVid'(VE, vid, sigma, is)
+	veBindVid(VE, vid, sigma, is)
       end
 
     fun elabConbind' C tau ((vid, tyOpt), (VE, taus)) =
@@ -572,7 +566,7 @@ structure TypeCheck : TYPE_CHECK =
 	    let val (_, tau) = Types.instRigid sigma
 		val sigma = Types.genLimit(tau, level)
 	    in
-	      veBindVid'(VE, vid, sigma, is)
+	      veBindVid(VE, vid, sigma, is)
 	    end
       in
 	Dict.fold(clos, Basis.emptyVE, dict)
@@ -753,7 +747,7 @@ structure TypeCheck : TYPE_CHECK =
 	  val tau = elabTy(C, ty)
 	  val sigma = Types.genAll tau
       in
-	veBindVid'(VE, vid, sigma, Basis.VAL)
+	veBindVid(VE, vid, sigma, Basis.VAL)
       end
 
     fun elabValDesc(C, valdesc) = (* C |- valdesc => E *)
