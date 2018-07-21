@@ -384,9 +384,10 @@ structure TypeCheck : TYPE_CHECK =
 
     (* 2.9 Syntactic Restrictions, 5th bullet:
      * ``No datbind, valbind, or exbind may bind "true", "false", "nil", "::" or "ref".
-     * No datbind or exbind may bind "it".''
+     *   No datbind or exbind may bind "it".''
+     * 3.5 imposes the same restrictions on datdesc, valdesc, and exdesc.
      *)
-    fun allowedConbindVid vid =
+    fun allowedVid vid = (* val(bind | desc) *)
       case vid
        of "true" => false
 	| "false" => false
@@ -395,29 +396,34 @@ structure TypeCheck : TYPE_CHECK =
 	| "ref" => false
 	| _ => true
 
-    fun checkConbindVid vid =
-      if allowedConbindVid vid then ()
-      else error("invalid binding of " ^ vid)
+    fun allowedCon vid = (* (dat | ex)(bind | desc) *)
+      case vid
+       of "it" => false
+	| _ => allowedVid vid
+
+    fun veBindCon(VE, vid, sigma, is) =
+      let val _ = if allowedCon vid then ()
+		  else error("invalid binding of " ^ vid)
+      in
+	veBindVid'(VE, vid, sigma, is)
+      end
 
     fun elabConbind' C tau ((vid, tyOpt), (VE, taus)) =
-      let val _ = checkConbindVid vid
-      in
-	case tyOpt
-	 of NONE =>
-	    (* Strictly speaking this genAll should be a genNone (29), followed by
-	       a dummy instantiation and a genAll in elabDatbind'' (28).  Doing a
-	       genAll here is simpler and has the same effect.  *)
-	    let val sigma = Types.genAll tau
-	    in
-	      (veBindVid'(VE, vid, sigma, Basis.CON false), taus)
-	    end
-	  | SOME ty =>
-	    let val tau' = elabTy(C, ty)
-		val sigma = Types.genAll(funTy(tau', tau))
-	    in
-	      (veBindVid'(VE, vid, sigma, Basis.CON true), tau' :: taus)
-	    end
-      end
+      case tyOpt
+       of NONE =>
+	  (* Strictly speaking this genAll should be a genNone (29), followed by
+	     a dummy instantiation and a genAll in elabDatbind'' (28).  Doing a
+	     genAll here is simpler and has the same effect.  *)
+	  let val sigma = Types.genAll tau
+	  in
+	    (veBindCon(VE, vid, sigma, Basis.CON false), taus)
+	  end
+	| SOME ty =>
+	  let val tau' = elabTy(C, ty)
+	      val sigma = Types.genAll(funTy(tau', tau))
+	  in
+	    (veBindCon(VE, vid, sigma, Basis.CON true), tau' :: taus)
+	  end
 
     fun elabConbind(C, tau, Absyn.CONBIND conbinds) = (* C,tau |- conbind => VE,tau* *)
       List.foldl (elabConbind' C tau) (Basis.emptyVE, []) conbinds
@@ -489,17 +495,17 @@ structure TypeCheck : TYPE_CHECK =
 
     fun elabExBind' C (exb, VE) =
       case exb
-       of Absyn.CONexb vid => veBindVid'(VE, vid, Types.genNone Basis.exnTy, Basis.EXN false)
+       of Absyn.CONexb vid => veBindCon(VE, vid, Types.genNone Basis.exnTy, Basis.EXN false)
 	| Absyn.OFexb(vid, ty) =>
 	  (* This genNone is correct, see (20) and its comment.  *)
 	  let val tau = elabTy(C, ty)
 	      val sigma = Types.genNone(funTy(tau, Basis.exnTy))
 	  in
-	    veBindVid'(VE, vid, sigma, Basis.EXN true)
+	    veBindCon(VE, vid, sigma, Basis.EXN true)
 	  end
 	| Absyn.EQexb(vid, longvid) =>
 	  case lookupLongVid(C, longvid)
-	   of (_, sigma, idstatus as Basis.EXN _) => veBindVid'(VE, vid, sigma, idstatus)
+	   of (_, sigma, is as Basis.EXN _) => veBindCon(VE, vid, sigma, is)
 	    | _ => error "exception aliasing non-exception"
 
     fun elabExBind(C, exbind) = (* C |- exbind => VE *)
@@ -547,10 +553,19 @@ structure TypeCheck : TYPE_CHECK =
      *)
 
     fun elabValRecPat C level ((pat, match), (VE, recs')) =
+      (* FIXME: in this case pat must permit rebinding a vid even if it has "c" is;
+	 c.f. the comment to rule (26) *)
       let val (VE, tau) = elabPat(C, level, Types.genNone, VE, pat)
       in
 	(VE, (tau, match) :: recs')
       end
+
+    fun checkValVid vid =
+      if allowedVid vid then ()
+      else error("invalid binding of " ^ vid)
+
+    fun checkValEnvVids(Basis.VE dict) =
+      Dict.fold(fn(vid, _, ()) => checkValVid vid, (), dict)
 
     fun closVE(level, Basis.VE dict) =
       let fun clos(vid, (sigma, is), VE) =
@@ -717,6 +732,9 @@ structure TypeCheck : TYPE_CHECK =
 
     and elabValRec(C, level, VE, recs) =
       let val (VErec, recs') = List.foldl (elabValRecPat C level) (Basis.emptyVE, []) recs
+	  (* Check the VErec for reserved identifiers.  They all have is "c",
+	     so could normally not get bound, but VErec explicitly ignores is.  *)
+	  val _ = checkValEnvVids VErec
 	  val _ = List.app (elabValRecMatch (cPlusVE(C, VErec)) level) recs'
       in
 	vePlusVE(VE, closVE(level, VErec))
