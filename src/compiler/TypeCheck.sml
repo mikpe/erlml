@@ -701,8 +701,9 @@ structure TypeCheck : TYPE_CHECK =
 	    end
 	  | Absyn.DATAREPLdec(tycon, longtycon) => (* 18 *)
 	    let val Basis.TYSTR(tyfcn, VE) = lookupLongTyCon(C, longtycon)
+		val TE = teBindTyCon(Basis.emptyTE, tycon, tyfcn, VE)
 	    in
-	      ePlusTE(ePlusVE(E, VE), teBindTyCon(Basis.emptyTE, tycon, tyfcn, VE))
+	      ePlusTE(ePlusVE(E, VE), TE)
 	    end
 	  | Absyn.EXdec exbind => (* 20 *)
 	    let val VE = elabExBind(C, exbind)
@@ -744,59 +745,116 @@ structure TypeCheck : TYPE_CHECK =
       Unify.unify(tau, elabMatch(C, level, match))
 
     (*
-     * SPECIFICATIONS
+     * Value Descriptions
      *)
 
-    fun checkValDesc' C ((vid, _), VE) =
-      (* TODO:
-       * - check vid may be bound (not forbidden)
-       * - elaborate ty and record that too
-       *)
-      veBindVid(VE, vid, Basis.VAL)
-
-    fun checkValDesc(C, valdesc) = (* C |- valdesc => VE *)
-      List.foldl (checkValDesc' C) Basis.emptyVE valdesc
-
-    fun checkConBind' C mkis ((vid, tyOpt), VE) =
-      (* TODO:
-       * - check vid may be bound (not forbidden)
-       * - elaborate tyOpt and record that too
-       *)
-      let val hasarg = case tyOpt of SOME _ => true
-				  |  NONE => false
+    fun elabValDesc' C ((vid, ty), VE) = (* 79 *)
+      let val _ = checkValVid vid
+	  val tau = elabTy(C, ty)
+	  val sigma = Types.genAll tau
       in
-	veBindVid(VE, vid, mkis hasarg)
+	veBindVid'(VE, vid, sigma, Basis.VAL)
       end
 
-    fun checkConBind(C, mkis, Absyn.CONBIND conbinds) = (* C,tau |- conbind => VE *)
-      List.foldl (checkConBind' C mkis) Basis.emptyVE conbinds
+    fun elabValDesc(C, valdesc) = (* C |- valdesc => E *)
+      List.foldl (elabValDesc' C) Basis.emptyVE valdesc
 
-    fun checkDatBind' C ((_, _, conbind), VE) =
-      (* TODO:
-       * - check tycon may be bound
-       * - compute equality attribute
-       * - record tycon in TE
-       *)
-      vePlusVE(VE, checkConBind(C, Basis.CON, conbind))
+    (*
+     * Type Descriptions
+     *)
 
-    fun checkDatBind(C, Absyn.DATBIND datbinds) = (* C |- datbind => VE,TE *)
-      List.foldl (checkDatBind' C) Basis.emptyVE datbinds
+    fun elabTypDesc' C eq ((tyvarseq, tycon), TE) = (* 80 *)
+      let val alphas = elabTyvarseq tyvarseq
+	  val tyname = Types.TYNAME{strid = "FIXME", tycon = tycon, eq = ref eq}
+	  val tau = Types.CONS(List.map Types.VAR alphas, tyname)
+	  val tyfcn = Types.lambda(alphas, tau)
+      in
+	teBindTyCon(TE, tycon, tyfcn, Basis.emptyVE)
+      end
 
-    fun checkSpec'(spec, env) =
+    fun elabTypDesc(C, eq, typdesc) = (* C |- typdesc => TE *)
+      List.foldl (elabTypDesc' C eq) Basis.emptyTE typdesc
+
+    (*
+     * Exception Descriptions
+     *)
+
+    fun elabExDesc' C ((vid, tyOpt), VE) = (* 83 *)
+      let val (tau', hasArg) =
+	      case tyOpt
+	       of NONE => (Basis.exnTy, false)
+		| SOME ty =>
+		  (* TODO: (83) checks that tyvars(tau) is empty, but that would allow
+		   * explicit type variables to occur but be forgotten; e.g. the following
+		   * would elaborate:
+		   *
+		   * type 'a forget = int
+		   * signature S = sig exception E of 'b forget end
+		   *
+		   * MoscowML rejects it but HaMLet accepts it.
+		   *)
+		  let val _ = checkFreeTyVars([], ty)
+		      val tau = elabTy(C, ty)
+		  in
+		    (funTy(tau, Basis.exnTy), true)
+		  end
+	  val is = Basis.EXN hasArg
+	  val sigma = Types.genNone tau'
+      in
+	veBindCon(VE, vid, sigma, is)
+      end
+
+    fun elabExDesc(C, Absyn.CONBIND conbind) = (* C |- exdesc => VE *)
+      List.foldl (elabExDesc' C) Basis.emptyVE conbind
+
+    (*
+     * Specifications
+     *)
+
+    fun elabSpec' (spec, E) =
       case spec
-       of Absyn.VALspec valdesc => ePlusVE(env, checkValDesc(env, valdesc))
-	| Absyn.TYPEspec _ => env (* TODO *)
-	| Absyn.EQTYPEspec _ => env (* TODO *)
-	| Absyn.DATATYPEspec datbind => ePlusVE(env, checkDatBind(env, datbind))
-	| Absyn.DATAREPLspec _ => env (* FIXME: import idstatus for ctors *)
-	| Absyn.EXspec conbind => ePlusVE(env, checkConBind(env, Basis.EXN, conbind))
+       of Absyn.VALspec valdesc => (* 68 *)
+	  let val VE = elabValDesc(E, valdesc)
+	      (* Note: the closure is done by elabValDesc *)
+	  in
+	    ePlusVE(E, VE)
+	  end
+	| Absyn.TYPEspec typdesc => (* 69 *)
+	  let val TE = elabTypDesc(E, Types.NEVER, typdesc)
+	  in
+	    ePlusTE(E, TE)
+	  end
+	| Absyn.EQTYPEspec typdesc => (* 70 *)
+	  let val TE = elabTypDesc(E, Types.ALWAYS, typdesc)
+	  in
+	    ePlusTE(E, TE)
+	  end
+	| Absyn.DATATYPEspec datbind => (* 71 *)
+	    let val (VE, TE) = elabDatBind(E, datbind, Absyn.TYPBIND [])
+	    in
+	      ePlusTE(ePlusVE(E, VE), TE)
+	    end
+	| Absyn.DATAREPLspec(tycon, longtycon) => (* 72 *)
+	  let val Basis.TYSTR(tyfcn, VE) = lookupLongTyCon(E, longtycon)
+	      val TE = teBindTyCon(Basis.emptyTE, tycon, tyfcn, VE)
+	  in
+	    ePlusTE(ePlusVE(E, VE), TE)
+	  end
+	| Absyn.EXspec exdesc => (* 73 *)
+	  let val VE = elabExDesc(E, exdesc)
+	  in
+	    ePlusVE(E, VE)
+	  end
 	| Absyn.STRUCTUREspec _ => nyi "nested structure in <spec>"
 	| Absyn.INCLUDEspec _ => nyi "include <spec>" (* TODO *)
 	| Absyn.SHARINGTYspec _ => nyi "sharing type <spec>"
 	| Absyn.SHARINGSTRspec _ => nyi "sharing <spec>"
 
-    fun checkSpec(Absyn.SPEC specs, env) =
-      Basis.SIG(List.foldl checkSpec' env specs)
+    fun elabSpec(B, Absyn.SPEC specs) = (* B |- spec => E *) (* TODO: don't ignore B *)
+      List.foldl elabSpec' Basis.emptyEnv specs
+
+    fun checkSpec(B, spec) =
+      Basis.SIG(elabSpec(B, spec))
 
     (*
      * SIGNATURE EXPRESSIONS & BINDINGS
@@ -829,7 +887,7 @@ structure TypeCheck : TYPE_CHECK =
 
     fun checkSigExp(sigexp, basis) =
       case sigexp
-       of Absyn.SPECsigexp spec  => checkSpec(spec, Basis.emptyEnv)
+       of Absyn.SPECsigexp spec  => checkSpec(basis, spec)
 	| Absyn.SIGIDsigexp sigid => checkSigid(sigid, basis)
 	| Absyn.WHEREsigexp _ => nyi "where <sigexp"
 
