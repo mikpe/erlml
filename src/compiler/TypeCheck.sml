@@ -57,8 +57,11 @@ structure TypeCheck : TYPE_CHECK =
 	     of SOME env => env
 	      | NONE =>
 		case readBasisFile(strid, ".sml")
-		 of SOME(Basis.BASIS(_, env)) => env
-		  | NONE => unboundStrId([], strid)
+		 of NONE => unboundStrId([], strid)
+		  | SOME(Basis.BASIS(_, Basis.E(Basis.SE dict, _, _))) =>
+		    case Dict.find(dict, strid)
+		     of SOME env => env
+		      | NONE => unboundStrId([], strid)
 	  end
 
     fun lookupNextStrId(strid, (Basis.E(Basis.SE dict, _, _), revpfx)) =
