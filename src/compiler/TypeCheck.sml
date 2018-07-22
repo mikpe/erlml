@@ -46,6 +46,31 @@ structure TypeCheck : TYPE_CHECK =
     fun unboundStrId(strids, strid) = unbound("strid", strids, strid)
     fun unboundTyCon(strids, tycon) = unbound("tycon", strids, tycon)
     fun unboundTyVar tyvar = unbound("tyvar", [], tyvar)
+    fun unboundSigId sigid = unbound("sigid", [], sigid)
+    fun lookupSigId'(Basis.BASIS(Basis.G dict, _), sigid) =
+      Dict.find(dict, sigid)
+
+    fun lookupSigId(B, sigid) =
+      case lookupSigId'(B, sigid)
+       of SOME sigma => sigma
+	| NONE =>
+	  case lookupSigId'(Basis.initialBasis, sigid)
+	   of SOME sigma => sigma
+	    | NONE =>
+	      case readBasisFile(sigid, ".sig")
+	       of NONE => unboundSigId sigid
+		| SOME B' =>
+		  case lookupSigId'(B', sigid)
+		   of SOME sigma => sigma
+		    | NONE => unboundSigId sigid
+
+    fun gBindSigId(Basis.G dict, sigid, sigma) =
+      case Dict.find(dict, sigid)
+       of NONE => Basis.G(Dict.insert(dict, sigid, sigma))
+	| SOME _ => error("sigid " ^ sigid ^ " already bound")
+
+    fun bPlusG(Basis.BASIS(Basis.G dict1, E), Basis.G dict2) =
+      Basis.BASIS(Basis.G(Dict.plus(dict1, dict2)), E)
 
     fun lookupFirstStrId(Basis.E(Basis.SE dict, _, _), strid) =
       case Dict.find(dict, strid)
@@ -850,49 +875,44 @@ structure TypeCheck : TYPE_CHECK =
     fun elabSpec(B, Absyn.SPEC specs) = (* B |- spec => E *) (* TODO: don't ignore B *)
       List.foldl elabSpec' Basis.emptyEnv specs
 
-    fun checkSpec(B, spec) =
-      Basis.SIG(elabSpec(B, spec))
-
     (*
-     * SIGNATURE EXPRESSIONS & BINDINGS
+     * Signature Expressions
      *)
 
-    fun lookupSigid'(Basis.BASIS(Basis.G dict, _), sigid) =
-      Dict.find(dict, sigid)
-
-    fun lookupSigid(basis, sigid) =
-      case lookupSigid'(basis, sigid)
-       of NONE => lookupSigid'(Basis.initialBasis, sigid)
-	| sth => sth
-
-    fun bindSigid(Basis.BASIS(Basis.G dict, env), sigid, sigma) =
-      (* TODO: check that sigid isn't already bound *)
-      Basis.BASIS(Basis.G(Dict.insert(dict, sigid, sigma)), env)
-
-    fun findSigma(sigid, basis) =
-      case lookupSigid(basis, sigid)
-       of SOME sigma => SOME sigma
-	| NONE =>
-	  case readBasisFile(sigid, ".sig")
-	   of NONE => NONE
-	    | SOME basis => lookupSigid'(basis, sigid)
-
-    fun checkSigid(sigid, basis) =
-      case findSigma(sigid, basis)
-       of SOME sigma => sigma
-	| NONE => error("sigid " ^ sigid ^ " is unbound and no valid .basis file found")
-
-    fun checkSigExp(sigexp, basis) =
+    fun elabSigExpE(B, sigexp) = (* B |- sigexp => E *)
       case sigexp
-       of Absyn.SPECsigexp spec  => checkSpec(basis, spec)
-	| Absyn.SIGIDsigexp sigid => checkSigid(sigid, basis)
-	| Absyn.WHEREsigexp _ => nyi "where <sigexp"
+       of Absyn.SPECsigexp spec => (* 62 *)
+	  let val E = elabSpec(B, spec)
+	  in
+	    E
+	  end
+	| Absyn.SIGIDsigexp sigid => (* 63 *)
+	  let val Basis.SIG E = lookupSigId(B, sigid)
+	      (* TODO: rename tynames? *)
+	  in
+	    E
+	  end
+	| Absyn.WHEREsigexp _ => nyi "where <sigexp" (* 64 *)
 
-    fun checkSigBind'((sigid, sigexp), basis) =
-      bindSigid(basis, sigid, checkSigExp(sigexp, basis))
+    fun elabSigExpSigma(B, sigexp) = (* B |- sigexp => sigma *) (* 65 *)
+      let val E = elabSigExpE(B, sigexp)
+	  (* TODO: bind tynames? *)
+      in
+	Basis.SIG E
+      end
 
-    fun checkSigBind(Absyn.SIGBIND sigbinds, basis) =
-      List.foldl checkSigBind' basis sigbinds
+    (*
+     * Signature Bindings
+     *)
+
+    fun elabSigBind' B ((sigid, sigexp), G) = (* 67 *)
+      let val sigma = elabSigExpSigma(B, sigexp)
+      in
+	gBindSigId(G, sigid, sigma)
+      end
+
+    fun elabSigBind(B, Absyn.SIGBIND sigbinds) = (* B |- sigbind => G *)
+      List.foldl (elabSigBind' B) Basis.emptyG sigbinds
 
     (*
      * STRUCTURES
@@ -916,7 +936,7 @@ structure TypeCheck : TYPE_CHECK =
 
     fun checkModule(strdec, sigid, refOptEnv, basis) =
       let val _ = checkStrDec(Basis.emptyBasis, strdec)
-	  val Basis.SIG env = checkSigid(sigid, basis)
+	  val Basis.SIG env = lookupSigId(basis, sigid)
       in
 	refOptEnv := SOME env;
 	env
@@ -955,7 +975,11 @@ structure TypeCheck : TYPE_CHECK =
     fun checkTopDec(topdec, basis) =
       case topdec
        of Absyn.STRDECtopdec strdec => checkTopStrDec(strdec, basis)
-	| Absyn.SIGDECtopdec sigbind => checkSigBind(sigbind, basis)
+	| Absyn.SIGDECtopdec sigbind =>
+	  let val G = elabSigBind(basis, sigbind)
+	  in
+	    bPlusG(basis, G)
+	  end
 	| Absyn.FUNDECtopdec _ => nyi "functor declarations"
 
     fun check topdec =
