@@ -141,6 +141,20 @@ structure TypeCheck : TYPE_CHECK =
 
     val ePlusE = cPlusE
 
+    fun seBindStrId(Basis.SE dict, strid, E) = (* SE+{strid->E}, but checks strid not in Dom(SE) *)
+      case Dict.find(dict, strid)
+       of NONE => Basis.SE(Dict.insert(dict, strid, E))
+	| SOME _ => error("strid " ^ strid ^ " already bound")
+
+    fun sePlusSE(SE, Basis.SE SE') = (* SE+SE' *)
+      let fun bind(strid, E, SE) = seBindStrId(SE, strid, E)
+      in
+	Dict.fold(bind, SE, SE')
+      end
+
+    fun ePlusSE(Basis.E(SE1, TE, VE), SE2) = (* E+SE *)
+      Basis.E(sePlusSE(SE1, SE2), TE, VE)
+
     fun teBindTyCon(Basis.TE dict, tycon, tyfcn, VE) = (* TE+{tycon->(tyfcn,VE)}, but checks tycon not in Dom(TE) *)
       case Dict.find(dict, tycon)
        of NONE => Basis.TE(Dict.insert(dict, tycon, Basis.TYSTR(tyfcn, VE)))
@@ -830,10 +844,26 @@ structure TypeCheck : TYPE_CHECK =
       List.foldl (elabExDesc' C) Basis.emptyVE conbind
 
     (*
+     * Structure Descriptions
+     *)
+
+    fun elabStrDesc(B, strdesc) = (* B |- strdesc => SE *)
+      List.foldl (elabStrDesc' B) Basis.emptySE strdesc
+
+    and elabStrDesc' B ((strid, sigexp), SE) = (* 84 *)
+      let val E = elabSigExpE(B, sigexp)
+      in
+	seBindStrId(SE, strid, E)
+      end
+
+    (*
      * Specifications
      *)
 
-    fun elabSpec' (spec, E) =
+    and elabSpec(B, Absyn.SPEC specs) = (* B |- spec => E *)
+      List.foldl (elabSpec' B) Basis.emptyEnv specs
+
+    and elabSpec' B (spec, E) =
       case spec
        of Absyn.VALspec valdesc => (* 68 *)
 	  let val VE = elabValDesc(E, valdesc)
@@ -867,19 +897,24 @@ structure TypeCheck : TYPE_CHECK =
 	  in
 	    ePlusVE(E, VE)
 	  end
-	| Absyn.STRUCTUREspec _ => nyi "nested structure in <spec>"
-	| Absyn.INCLUDEspec _ => nyi "include <spec>" (* TODO *)
+	| Absyn.STRUCTUREspec strdesc => (* 74 *)
+	  let val SE = elabStrDesc(B, strdesc)
+	  in
+	    ePlusSE(E, SE)
+	  end
+	| Absyn.INCLUDEspec sigexp => (* 75 *)
+	  let val E' = elabSigExpE(B, sigexp)
+	  in
+	    ePlusE(E, E')
+	  end
 	| Absyn.SHARINGTYspec _ => nyi "sharing type <spec>"
 	| Absyn.SHARINGSTRspec _ => nyi "sharing <spec>"
-
-    fun elabSpec(B, Absyn.SPEC specs) = (* B |- spec => E *) (* TODO: don't ignore B *)
-      List.foldl elabSpec' Basis.emptyEnv specs
 
     (*
      * Signature Expressions
      *)
 
-    fun elabSigExpE(B, sigexp) = (* B |- sigexp => E *)
+    and elabSigExpE(B, sigexp) = (* B |- sigexp => E *)
       case sigexp
        of Absyn.SPECsigexp spec => (* 62 *)
 	  let val E = elabSpec(B, spec)

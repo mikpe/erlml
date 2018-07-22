@@ -57,6 +57,7 @@ signature BASIS =
     val emptyVE : valenv
     val emptyTE : tyenv
     val emptyEnv : env
+    val emptySE : strenv
     val emptyG : sigenv
     val emptyBasis : basis
     val initialBasis : basis
