@@ -857,7 +857,7 @@ structure TypeCheck : TYPE_CHECK =
      * SIGNATURE EXPRESSIONS & BINDINGS
      *)
 
-    fun lookupSigid'(Basis.BASIS(Basis.SIGE dict, _), sigid) =
+    fun lookupSigid'(Basis.BASIS(Basis.G dict, _), sigid) =
       Dict.find(dict, sigid)
 
     fun lookupSigid(basis, sigid) =
@@ -865,9 +865,9 @@ structure TypeCheck : TYPE_CHECK =
        of NONE => lookupSigid'(Basis.initialBasis, sigid)
 	| sth => sth
 
-    fun bindSigid(Basis.BASIS(Basis.SIGE dict, env), sigid, sigma) =
+    fun bindSigid(Basis.BASIS(Basis.G dict, env), sigid, sigma) =
       (* TODO: check that sigid isn't already bound *)
-      Basis.BASIS(Basis.SIGE(Dict.insert(dict, sigid, sigma)), env)
+      Basis.BASIS(Basis.G(Dict.insert(dict, sigid, sigma)), env)
 
     fun findSigma(sigid, basis) =
       case lookupSigid(basis, sigid)
@@ -900,7 +900,7 @@ structure TypeCheck : TYPE_CHECK =
 
     fun cOfB(Basis.BASIS(_, E)) = E
 
-    fun bPlusE(Basis.BASIS(SIGE, E1), E2) = Basis.BASIS(SIGE, ePlusE(E1, E2))
+    fun bPlusE(Basis.BASIS(G, E1), E2) = Basis.BASIS(G, ePlusE(E1, E2))
 
     fun checkStrDec(B, Absyn.STRDEC[strdec]) = (* B |- strdec => E *)
         (case strdec

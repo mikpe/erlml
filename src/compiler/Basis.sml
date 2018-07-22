@@ -35,7 +35,7 @@ structure Basis : BASIS =
     and strenv        = SE of (ident, env) Dict.dict
 
     datatype sigma    = SIG of env (* TODO: add TyNameSet? *)
-    datatype sigenv   = SIGE of (ident, sigma) Dict.dict
+    datatype sigenv   = G of (ident, sigma) Dict.dict
 
     datatype basis    = BASIS of sigenv * env (* TODO: add FunEnv *)
 
@@ -47,9 +47,9 @@ structure Basis : BASIS =
 
     val emptyEnv = E(emptySE, emptyTE, emptyVE)
 
-    val emptySIGE = SIGE(Dict.empty identCompare)
+    val emptyG = G(Dict.empty identCompare)
 
-    val emptyBasis = BASIS(emptySIGE, emptyEnv)
+    val emptyBasis = BASIS(emptyG, emptyEnv)
 
     (* Initial Basis (TODO: incomplete) *)
 
@@ -177,7 +177,7 @@ structure Basis : BASIS =
 	    ]))))
 	])
 
-    val initialSigEnv = emptySIGE
+    val initialSigEnv = emptyG
     val initialValEnv = emptyVE
     val initialTyEnv = emptyTE
     val initialStrEnv = SE(Dict.fromList(identCompare, [("TextIO", E(emptySE, emptyTE, veTextIO))]))
@@ -705,11 +705,11 @@ structure Basis : BASIS =
 	Dict.insert(dict, sigid, SIG env)
       end
 
-    fun writeSigenv(os, SIGE dict) =
+    fun writeSigenv(os, G dict) =
       writeDict(os, dict, writeSigenvMapping)
 
     fun readSigenv is =
-      SIGE(readDict(is, readSigenvMapping))
+      G(readDict(is, readSigenvMapping))
 
     (* I/O of basis *)
 
