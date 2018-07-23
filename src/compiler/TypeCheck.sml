@@ -94,6 +94,17 @@ structure TypeCheck : TYPE_CHECK =
        of SOME env => (env, strid :: revpfx)
 	| NONE => unboundStrId(List.rev revpfx, strid)
 
+    fun lookupLongStrId(E, longstrid) =
+      let val (first, rest) =
+	      case longstrid
+	       of Absyn.LONGID([], strid) => (strid, [])
+		| Absyn.LONGID(strid :: strids, strid') => (strid, strids @ [strid'])
+	  val E = lookupFirstStrId(E, first)
+	  val (E, _) = List.foldl lookupNextStrId (E, [first]) rest
+      in
+	E
+      end
+
     (* For a short VId we look it up first in the current Env, and then in toplevelValEnv.
        For a long VId, we look up the first StrId first in the current Env, then in the
        initial Basis, and lastly from a .basis file.  The resulting Env is then used to
@@ -752,7 +763,12 @@ structure TypeCheck : TYPE_CHECK =
 	    in
 	      ePlusE(E, E2)
 	    end
-	  | _ => nyi "abstype or open <dec>" (* 19 *) (* 22 *)
+	  | Absyn.OPENdec longstrids => (* 22 *)
+	    let fun doOpen(longstrid, E) = ePlusE(E, lookupLongStrId(C, longstrid))
+	    in
+	      List.foldl doOpen E longstrids
+	    end
+	  | _ => nyi "abstype <dec>" (* 19 *)
       end
 
     and elabValbind(C, level, nonrecs, recs) =
