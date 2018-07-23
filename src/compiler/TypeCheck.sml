@@ -152,6 +152,10 @@ structure TypeCheck : TYPE_CHECK =
 
     val ePlusE = cPlusE
 
+    fun bPlusE(Basis.BASIS(G, E1), E2) = Basis.BASIS(G, ePlusE(E1, E2))
+
+    fun cOfB(Basis.BASIS(_, E)) = E
+
     fun seBindStrId(Basis.SE dict, strid, E) = (* SE+{strid->E}, but checks strid not in Dom(SE) *)
       case Dict.find(dict, strid)
        of NONE => Basis.SE(Dict.insert(dict, strid, E))
@@ -966,77 +970,112 @@ structure TypeCheck : TYPE_CHECK =
       List.foldl (elabSigBind' B) Basis.emptyG sigbinds
 
     (*
-     * STRUCTURES
+     * Structure Expressions
      *)
 
-    fun cOfB(Basis.BASIS(_, E)) = E
-
-    fun bPlusE(Basis.BASIS(G, E1), E2) = Basis.BASIS(G, ePlusE(E1, E2))
-
-    fun checkStrDec(B, Absyn.STRDEC[strdec]) = (* B |- strdec => E *)
-        (case strdec
-	  of Absyn.DECstrdec dec => elabDec(cOfB B, 0, dec)
-	   | Absyn.LOCALstrdec(strdec1, strdec2) =>
-	     let val E1 = checkStrDec(B, strdec1)
-		 val E2 = checkStrDec(bPlusE(B, E1), strdec2)
-	     in
-	       E2
-	     end
-	   | _ => nyi "<strbind> form of <strdec>")
-      | checkStrDec(_, _) = nyi "non-single <strdec>"
-
-    fun checkModule(strdec, sigid, refOptEnv, basis) =
-      let val _ = checkStrDec(Basis.emptyBasis, strdec)
-	  val Basis.SIG env = lookupSigId(basis, sigid)
-      in
-	refOptEnv := SOME env;
-	env
-      end
-
-    fun checkStrExp(strexp, basis) =
+    fun elabStrExp(B, strexp) = (* B |- strexp => E *)
       case strexp
-       of Absyn.TRANSPARENTstrexp(Absyn.STRUCTstrexp strdec, Absyn.SIGIDsigexp sigid, refOptEnv) =>
-	  checkModule(strdec, sigid, refOptEnv, basis)
-	| Absyn.OPAQUEstrexp(Absyn.STRUCTstrexp strdec, Absyn.SIGIDsigexp sigid, refOptEnv) =>
-	  checkModule(strdec, sigid, refOptEnv, basis)
-	| _ => nyi "non-plain form of <strexp>"
-
-    fun bindStrid(Basis.BASIS(sigenv, Basis.E(Basis.SE dict, tyenv, valenv)), strid, env) =
-      Basis.BASIS(sigenv, Basis.E(Basis.SE(Dict.insert(dict, strid, env)), tyenv, valenv))
-
-    fun checkStrBind'((strid, strexp), basis) =
-      bindStrid(basis, strid, checkStrExp(strexp, basis))
-
-    fun checkStrBind(Absyn.STRBIND strbinds, basis) =
-      List.foldl checkStrBind' basis strbinds
-
-    fun checkTopStrDec'(strdec, basis) =
-      case strdec
-       of Absyn.DECstrdec _ => nyi "top-level plain <dec>"
-	| Absyn.STRUCTUREstrdec strbind => checkStrBind(strbind, basis)
-	| Absyn.LOCALstrdec _ => nyi "top-level 'local'"
-
-    fun checkTopStrDec(Absyn.STRDEC strdecs, basis) =
-      List.foldl checkTopStrDec' basis strdecs
+       of Absyn.STRUCTstrexp strdec => (* 50 *)
+	  let val E = elabStrDec(B, strdec)
+	  in
+	    E
+	  end
+	| Absyn.LONGSTRIDstrexp longstrid => (* 51 *)
+	  let val E = lookupLongStrId(cOfB B, longstrid)
+	  in
+	    E
+	  end
+	| Absyn.TRANSPARENTstrexp(strexp, sigexp, refOptEnv) => (* 52 *)
+	  let val E = elabStrExp(B, strexp)
+	      val sigma = elabSigExpSigma(B, sigexp)
+	      (* FIXME: implement "sigma >= E' < E" side-condition *)
+	      val Basis.SIG E'' = sigma
+	      val _ = refOptEnv := SOME E''
+	  in
+	    E''
+	  end
+	| Absyn.OPAQUEstrexp(strexp, sigexp, refOptEnv) => (* 53 *)
+	  let val E = elabStrExp(B, strexp)
+	      val sigma = elabSigExpSigma(B, sigexp)
+	      (* FIXME: implement "sigma >= E' < E" and "T' & (T of B) = 0" side-conditions *)
+	      val Basis.SIG E'' = sigma
+	      val _ = refOptEnv := SOME E''
+	  in
+	    E''
+	  end
+	| Absyn.FUNAPPstrexp(funid, strexp) => (* 54 *)
+	  nyi "functor application form of <strexp>"
+	| Absyn.LETstrexp(strdec, strexp) => (* 55 *)
+	  let val E1 = elabStrDec(B, strdec)
+	      val E2 = elabStrExp(bPlusE(B, E1), strexp)
+	  in
+	    E2
+	  end
 
     (*
-     * TOP-LEVEL DECLARATIONS
+     * Structure-level Declarations
      *)
 
-    fun checkTopDec(topdec, basis) =
+    and elabStrDec' B (strdec, E) =
+	let val B = bPlusE(B, E)
+	in
+	  case strdec
+	   of Absyn.DECstrdec dec => (* 56 *)
+	      let val E' = elabDec(cOfB B, 0, dec)
+	      in
+		ePlusE(E, E')
+	      end
+	    | Absyn.STRUCTUREstrdec strbind => (* 57 *)
+	      let val SE = elabStrBind(B, strbind)
+	      in
+		ePlusSE(E, SE)
+	      end
+	    | Absyn.LOCALstrdec(strdec1, strdec2) => (* 58 *)
+	      let val E1 = elabStrDec(B, strdec1)
+		  val E2 = elabStrDec(bPlusE(B, E1), strdec2)
+	      in
+		ePlusE(E, E2)
+	      end
+	end
+
+    and elabStrDec(B, Absyn.STRDEC strdecs) = (* B |- strdec => E *) (* 60 *)
+	List.foldl (elabStrDec' B) Basis.emptyEnv strdecs
+
+    (*
+     * Structure Bindings
+     *)
+
+    and elabStrBind(B, Absyn.STRBIND strbinds) = (* B |- strbind => SE *)
+	List.foldl (elabStrBind' B) Basis.emptySE strbinds
+
+    and elabStrBind' B ((strid, strexp), SE) = (* 61 *)
+	let val E = elabStrExp(B, strexp)
+	in
+	  seBindStrId(SE, strid, E)
+	end
+
+    (*
+     * Top-level Declarations
+     *)
+
+    fun elabTopDec(B, topdec) = (* B |- topdec => B' *)
       case topdec
-       of Absyn.STRDECtopdec strdec => checkTopStrDec(strdec, basis)
-	| Absyn.SIGDECtopdec sigbind =>
-	  let val G = elabSigBind(basis, sigbind)
+       of Absyn.STRDECtopdec strdec => (* 87 *)
+	  let val E = elabStrDec(B, strdec)
 	  in
-	    bPlusG(basis, G)
+	    bPlusE(B, E)
+	  end
+	| Absyn.SIGDECtopdec sigbind => (* 88 *)
+	  let val G = elabSigBind(B, sigbind)
+	  in
+	    bPlusG(B, G)
 	  end
 	| Absyn.FUNDECtopdec _ => nyi "functor declarations"
 
     fun check topdec =
       let val _ = ExplicitTyVarScope.annotate topdec
       in
-	checkTopDec(topdec, Basis.emptyBasis)
+	elabTopDec(Basis.emptyBasis, topdec)
       end
 
   end
