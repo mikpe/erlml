@@ -79,6 +79,8 @@ signature TYPES =
 
     val tyAdmitsEq	: ty -> tynameeq
 
+    val tyIsClosed	: ty -> bool
+
     (* TYPE FUNCTIONS *)
 
     type tyfcn

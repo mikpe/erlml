@@ -353,7 +353,7 @@ structure TypeCheck : TYPE_CHECK =
      * "Any tyvar occurring within the right side must occur in tyvarseq".  Furthermore, in 4.4
      * it specified that type functions must be closed.  Both of these restrictions are removed
      * in SML'97.  However, Rossberg's "Defects" document lists this as an error in SML'97, and
-     * both Hamlet and MoscowML enforce the SML'90 rule.  We do the same.
+     * both HaMLet and MoscowML enforce the SML'90 rule.  We do the same.
      *)
 
     fun checkFreeTyVars(tyvarseq, ty) =
@@ -842,17 +842,9 @@ structure TypeCheck : TYPE_CHECK =
 	      case tyOpt
 	       of NONE => (Basis.exnTy, false)
 		| SOME ty =>
-		  (* TODO: (83) checks that tyvars(tau) is empty, but that would allow
-		   * explicit type variables to occur but be forgotten; e.g. the following
-		   * would elaborate:
-		   *
-		   * type 'a forget = int
-		   * signature S = sig exception E of 'b forget end
-		   *
-		   * MoscowML rejects it but HaMLet accepts it.
-		   *)
-		  let val _ = checkFreeTyVars([], ty)
-		      val tau = elabTy(C, ty)
+		  let val tau = elabTy(C, ty)
+		      val _ = if Types.tyIsClosed tau then ()
+			      else error "type is not closed"
 		  in
 		    (funTy(tau, Basis.exnTy), true)
 		  end

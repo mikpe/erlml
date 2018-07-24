@@ -146,6 +146,18 @@ structure Types : TYPES =
         checkTy ty
       end
 
+    fun tyIsClosed ty =
+      case derefTy ty
+       of VAR _ => false
+	| REC record =>
+	  let val RECORD{fields, subst} = derefRecord record
+	  in
+	    case subst
+	     of SOME _ => false
+	      | NONE => List.all (fn(_, ty) => tyIsClosed ty) fields
+	  end
+	| CONS(tys, _) => List.all tyIsClosed tys
+
     (* TYPE COMBINATORS: used internally to implement Type Functions and Type Schemes *)
 
     datatype tycomb
