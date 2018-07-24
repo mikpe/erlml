@@ -44,6 +44,7 @@ structure Main : MAIN =
 
     fun translate file =
       let val absynTopdec = Parser.parse_file file
+	  val _ = Types.seedTynames file (* FIXME: CRC of file *)
 	  val basis = TypeCheck.check absynTopdec
       in
 	case absynTopdec

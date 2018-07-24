@@ -88,7 +88,7 @@ LexArg.ui LexArg.uo: LEXARG.sig.ui Source.ui
 LexUtil.ui LexUtil.uo: LEXUTIL.sig.ui
 LEXER.sig.ui LEXER.sig.uo: LexArg.ui Token.ui
 Lexer.ui Lexer.uo: LEXER.sig.ui LexArg.ui Token.ui LexUtil.ui
-Main.ui Main.uo: MAIN.sig.ui Parser.ui TypeCheck.ui Absyn.ui Basis.ui Translate.ui CoreErlangPrint.ui
+Main.ui Main.uo: MAIN.sig.ui Parser.ui TypeCheck.ui Absyn.ui Basis.ui Translate.ui CoreErlangPrint.ui Types.ui
 PARSER.sig.ui PARSER.sig.uo: LexArg.ui Absyn.ui
 Parser.ui Parser.uo: PARSER.sig.ui Token.ui LexArg.ui Lexer.ui Absyn.ui Dict.ui Basis.ui Util.ui
 Source.ui Source.uo: SOURCE.sig.ui

@@ -54,23 +54,24 @@ structure Basis : BASIS =
     (* Initial Basis (TODO: incomplete) *)
 
     val stridPrimitive = "_ERLML_PRIMITIVE"
+    val tunitPrimitive = "_ERLML_PRIMITIVE"
 
-    val funTyname = Types.TYNAME{strid = stridPrimitive, tycon = "->", eq = ref Types.NEVER}
-    val boolTyname = Types.TYNAME{strid = stridPrimitive, tycon = "bool", eq = ref Types.ALWAYS}
-    val intTyname = Types.TYNAME{strid = stridPrimitive, tycon = "int", eq = ref Types.ALWAYS}
-    val wordTyname = Types.TYNAME{strid = stridPrimitive, tycon = "word", eq = ref Types.ALWAYS}
-    val realTyname = Types.TYNAME{strid = stridPrimitive, tycon = "real", eq = ref Types.NEVER}
-    val stringTyname = Types.TYNAME{strid = stridPrimitive, tycon = "string", eq = ref Types.ALWAYS}
-    val charTyname = Types.TYNAME{strid = stridPrimitive, tycon = "char", eq = ref Types.ALWAYS}
-    val listTyname = Types.TYNAME{strid = stridPrimitive, tycon = "list", eq = ref Types.MAYBE}
-    val refTyname = Types.TYNAME{strid = stridPrimitive, tycon = "ref", eq = ref Types.ALWAYS}
-    val exnTyname = Types.TYNAME{strid = stridPrimitive, tycon = "exn", eq = ref Types.NEVER}
-    val substringTyname = Types.TYNAME{strid = stridPrimitive, tycon = "substring", eq = ref Types.NEVER}
-    val arrayTyname = Types.TYNAME{strid = stridPrimitive, tycon = "array", eq = ref Types.ALWAYS}
-    val vectorTyname = Types.TYNAME{strid = stridPrimitive, tycon = "vector", eq = ref Types.ALWAYS}
-    val optionTyname = Types.TYNAME{strid = stridPrimitive, tycon = "option", eq = ref Types.MAYBE}
-    val orderTyname = Types.TYNAME{strid = stridPrimitive, tycon = "order", eq = ref Types.ALWAYS}
-    val outstreamTyname = Types.TYNAME{strid = stridPrimitive, tycon = "outstream", eq = ref Types.NEVER}
+    val funTyname = Types.TYNAME{tunit = tunitPrimitive, id = 0, tycon = "->", arity = 2, eq = ref Types.NEVER}
+    val boolTyname = Types.TYNAME{tunit = tunitPrimitive, id = 1, tycon = "bool", arity = 0, eq = ref Types.ALWAYS}
+    val intTyname = Types.TYNAME{tunit = tunitPrimitive, id = 2, tycon = "int", arity = 0, eq = ref Types.ALWAYS}
+    val wordTyname = Types.TYNAME{tunit = tunitPrimitive, id = 3, tycon = "word", arity = 0, eq = ref Types.ALWAYS}
+    val realTyname = Types.TYNAME{tunit = tunitPrimitive, id = 4, tycon = "real", arity = 0, eq = ref Types.NEVER}
+    val stringTyname = Types.TYNAME{tunit = tunitPrimitive, id = 5, tycon = "string", arity = 0, eq = ref Types.ALWAYS}
+    val charTyname = Types.TYNAME{tunit = tunitPrimitive, id = 6, tycon = "char", arity = 0, eq = ref Types.ALWAYS}
+    val listTyname = Types.TYNAME{tunit = tunitPrimitive, id = 7, tycon = "list", arity = 1, eq = ref Types.MAYBE}
+    val refTyname = Types.TYNAME{tunit = tunitPrimitive, id = 8, tycon = "ref", arity = 1, eq = ref Types.ALWAYS}
+    val exnTyname = Types.TYNAME{tunit = tunitPrimitive, id = 9, tycon = "exn", arity = 0, eq = ref Types.NEVER}
+    val substringTyname = Types.TYNAME{tunit = tunitPrimitive, id = 10, tycon = "substring", arity = 0, eq = ref Types.NEVER}
+    val arrayTyname = Types.TYNAME{tunit = tunitPrimitive, id = 11, tycon = "array", arity = 1, eq = ref Types.ALWAYS}
+    val vectorTyname = Types.TYNAME{tunit = tunitPrimitive, id = 12, tycon = "vector", arity = 1, eq = ref Types.ALWAYS}
+    val optionTyname = Types.TYNAME{tunit = tunitPrimitive, id = 13, tycon = "option", arity = 1, eq = ref Types.MAYBE}
+    val orderTyname = Types.TYNAME{tunit = tunitPrimitive, id = 14, tycon = "order", arity = 0, eq = ref Types.ALWAYS}
+    val outstreamTyname = Types.TYNAME{tunit = tunitPrimitive, id = 15, tycon = "outstream", arity = 0, eq = ref Types.NEVER}
 
     val unitTy = Types.REC(Types.RECORD{fields = [], subst = NONE})
     val boolTy = Types.CONS([], boolTyname)
@@ -337,18 +338,20 @@ structure Basis : BASIS =
 	    (false, AM{next = next, alist = alist}, next)
 	  end
 
-    fun writeTyname(os, Types.TYNAME{strid = strid, tycon = tycon, eq = eq}) =
-      (writeIdent(os, strid);
-       TextIO.output1(os, #".");
+    fun writeTyname(os, Types.TYNAME{tunit = tunit, id = id, tycon = tycon, arity = arity, eq = eq}) =
+      (writeIdent(os, tunit);
+       writeInt(os, id);
        writeIdent(os, tycon);
+       writeInt(os, arity);
        TextIO.output1(os, case !eq of Types.NEVER => #"n"
 				    | Types.MAYBE => #"m"
 				    | Types.ALWAYS => #"a"))
 
     fun readTyname is =
-      let val strid = readIdent is
-	  val _ = readChar(is, #".")
+      let val tunit = readIdent is
+	  val id = readInt is
 	  val tycon = readIdent is
+	  val arity = readInt is
 	  val eq =
 	      case TextIO.input1 is
 	       of SOME #"n" => Types.NEVER
@@ -357,7 +360,7 @@ structure Basis : BASIS =
 		| SOME c => expected("n, m, or a", c)
 		| NONE => prematureEof "n, m, or a"
       in
-	Types.TYNAME{strid = strid, tycon = tycon, eq = ref eq}
+	Types.TYNAME{tunit = tunit, id = id, tycon = tycon, arity = arity, eq = ref eq}
       end
 
     fun writeList(os, write, state, xs) =

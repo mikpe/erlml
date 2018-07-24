@@ -407,7 +407,8 @@ structure TypeCheck : TYPE_CHECK =
     fun elabDatbindSkeletal'((tyvarseq, tycon, conbinds), (TE, datbind')) =
       let val _ = checkConbindsFreeTyVars(tyvarseq, conbinds)
 	  val alphas = elabTyvarseq tyvarseq
-	  val tyname = Types.TYNAME{strid = "FIXME", tycon = tycon, eq = ref Types.MAYBE}
+	  val arity = length alphas
+	  val tyname = Types.mkTyname(tycon, arity, Types.MAYBE)
 	  val tau = Types.CONS(List.map Types.VAR alphas, tyname)
 	  val tyfcn = Types.lambda(alphas, tau)
       in
@@ -821,7 +822,8 @@ structure TypeCheck : TYPE_CHECK =
 
     fun elabTypDesc' C eq ((tyvarseq, tycon), TE) = (* 80 *)
       let val alphas = elabTyvarseq tyvarseq
-	  val tyname = Types.TYNAME{strid = "FIXME", tycon = tycon, eq = ref eq}
+	  val arity = length alphas
+	  val tyname = Types.mkTyname(tycon, arity, eq)
 	  val tau = Types.CONS(List.map Types.VAR alphas, tyname)
 	  val tyfcn = Types.lambda(alphas, tau)
       in

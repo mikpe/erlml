@@ -113,10 +113,10 @@ structure Unify : UNIFY =
 	       * from an abstract type spec may have a different eq attribute
 	       * than the tyname from the implementation datbind. (FIXME: check)
 	       *)
-	      let val Types.TYNAME{strid = strid1, tycon = tycon1, ...} = tyname1
-		  val Types.TYNAME{strid = strid2, tycon = tycon2, ...} = tyname2
+	      let val Types.TYNAME{tunit = tunit1, id = id1, ...} = tyname1
+		  val Types.TYNAME{tunit = tunit2, id = id2, ...} = tyname2
 	      in
-		strid1 = strid2 andalso tycon1 = tycon2
+		tunit1 = tunit2 andalso id1 = id2
 	      end
 	in
 	  if tynameEq(tyname1, tyname2) then unify_tys(tys1, tys2) else raise Unify

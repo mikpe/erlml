@@ -31,8 +31,10 @@ signature TYPES =
 
     datatype tyname
       = TYNAME of {
-	  strid		: string,
+	  tunit		: string,		(* FIXME: CRC of the source *)
+	  id		: int,			(* unique per tunit *)
 	  tycon		: string,
+	  arity		: int,
 	  eq		: tynameeq ref		(* admits equality? *)
 	}
 
@@ -58,6 +60,9 @@ signature TYPES =
 	  fields	: (label * ty) list,		(* known fields *)
 	  subst		: record option ref option	(* substitution, if flexible *)
 	}
+
+    val seedTynames	: string -> unit
+    val mkTyname	: string * int * tynameeq -> tyname
 
     val mkTyvar		: level * bool * tyname list option -> tyvar
     val mkFreeTyvar	: level -> tyvar

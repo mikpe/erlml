@@ -31,8 +31,10 @@ structure Types : TYPES =
 
     datatype tyname
       = TYNAME of {
-	  strid		: string,
+	  tunit		: string,		(* FIXME: CRC of the source *)
+	  id		: int,			(* unique per tunit *)
 	  tycon		: string,
+	  arity		: int,
 	  eq		: tynameeq ref		(* admits equality? *)
 	}
 
@@ -58,6 +60,18 @@ structure Types : TYPES =
 	  fields	: (label * ty) list,		(* known fields *)
 	  subst		: record option ref option	(* substitution, if flexible *)
 	}
+
+    val tynameTUnit = ref ""
+    val tynameCounter = ref 0
+
+    fun seedTynames tunit = (tynameTUnit := tunit; tynameCounter := 0)
+
+    fun mkTyname(tycon, arity, eq) =
+      let val id = !tynameCounter
+	  val _ = tynameCounter := id + 1
+      in
+	TYNAME{tunit = !tynameTUnit, id = id, tycon = tycon, arity = arity, eq = ref eq}
+      end
 
     fun mkTyvar(level, eq, ovld) = FREE(ALPHA{level = level, eq = eq, ovld = ovld, subst = ref NONE})
     fun mkFreeTyvar(level) = mkTyvar(level, false, NONE)
