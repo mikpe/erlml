@@ -81,6 +81,11 @@ signature TYPES =
 
     val tyIsClosed	: ty -> bool
 
+    type tofc
+    val getTofC		: unit -> tofc
+    val tynameInTofC	: tyname * tofc -> bool
+    val tynamesTauInTofC: ty * tofc -> bool
+
     (* TYPE FUNCTIONS *)
 
     type tyfcn

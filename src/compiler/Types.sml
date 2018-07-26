@@ -158,6 +158,38 @@ structure Types : TYPES =
 	  end
 	| CONS(tys, _) => List.all tyIsClosed tys
 
+    (*
+     * Support for "tyname in (T of C)" checking.
+     *
+     * Since tynames are generated via a counter, we record the counter's
+     * value before elaborating a context (a dec or sigexp) that may generate
+     * new tynames.  Afterwards, a tyname is in (T of C) if its id is less
+     * than the recorded counter value, or if it's from another translation
+     * unit.
+     *)
+
+    type tofc = string * int
+
+    fun getTofC() = (!tynameTUnit, !tynameCounter)
+
+    fun tynameInTofC(TYNAME{tunit, id, ...}, (tunit', id')) =
+      tunit <> tunit' orelse id < id'
+
+    fun tynamesTauInTofC(ty, TofC) =
+      let fun inTofC ty =
+	    case derefTy ty
+	     of VAR _ => true
+	      | REC record =>
+		let val RECORD{fields, ...} = derefRecord record
+		in
+		  List.all (fn(_, ty) => inTofC ty) fields
+		end
+	      | CONS(tys, tyname) =>
+		tynameInTofC(tyname, TofC) andalso List.all inTofC tys
+      in
+	inTofC ty
+      end
+
     (* TYPE COMBINATORS: used internally to implement Type Functions and Type Schemes *)
 
     datatype tycomb

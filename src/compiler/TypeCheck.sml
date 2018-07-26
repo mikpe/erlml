@@ -630,6 +630,17 @@ structure TypeCheck : TYPE_CHECK =
 	Dict.fold(clos, Basis.emptyVE, dict)
       end
 
+    fun tynamesVEinTofC(Basis.VE dict, TofC) =
+      let fun inTofC(_, (sigma, _), status) =
+	    status andalso
+	    let val (_, tau) = Types.instRigid sigma
+	    in
+	      Types.tynamesTauInTofC(tau, TofC)
+	    end
+      in
+	Dict.fold(inTofC, true, dict)
+      end
+
     fun elabExp(C, level, exp) = (* C |- exp => tau *)
       case exp
        of Absyn.SCONexp scon => sconType scon (* 1 *)
@@ -652,9 +663,11 @@ structure TypeCheck : TYPE_CHECK =
 	    Types.REC rho
 	  end
 	| Absyn.LETexp(dec, exp) => (* 4 *)
-	  let val E = elabDec(C, level + 1, dec)
+	  let val TofC = Types.getTofC()
+	      val E = elabDec(C, level + 1, dec)
 	      val tau = elabExp(cPlusE(C, E), level, exp)
-	      (* TODO: "tynames tau <= T of C" side-condition *)
+	      val _ = if Types.tynamesTauInTofC(tau, TofC) then ()
+		      else error "local tyname escapes"
 	  in
 	    tau
 	  end
@@ -716,9 +729,11 @@ structure TypeCheck : TYPE_CHECK =
       end
 
     and elabMrule(C, level, (pat, exp)) = (* C |- mrule => tau *) (* 14 *)
-      let val (VE, tau) = elabPat(C, level, Types.genNone, Basis.emptyVE, pat)
+      let val TofC = Types.getTofC()
+	  val (VE, tau) = elabPat(C, level, Types.genNone, Basis.emptyVE, pat)
 	  val tau' = elabExp(cPlusVE(C, VE), level, exp)
-	  (* TODO: "tynames VE <= T of C" side-condition *)
+	  val _ = if tynamesVEinTofC(VE, TofC) then ()
+		  else error "local tyname escapes"
       in
 	funTy(tau, tau')
       end
