@@ -415,4 +415,76 @@ structure Types : TYPES =
         (bvars', applyTycomb(comb, map VAR bvars'))
       end
 
+    (* TYPE REALISATIONS (section 5.2)
+     *
+     * To improve sharing with the input, internal recursive calls return
+     * NONE if no replacements were made, SOME(replacement) otherwise.
+     *)
+
+    datatype phi = PHI of (tyname * tyfcn) list
+
+    fun applyPhiList(phi, f, xs) =
+      let fun loop([], false, _) = NONE
+	    | loop([], true, acc) = SOME(List.rev acc)
+	    | loop(x :: xs, flag, acc) =
+	      let val (flag, x) = case f x
+				   of NONE => (flag, x)
+				    | SOME x => (true, x)
+	      in
+		loop(xs, flag, x :: acc)
+	      end
+      in
+	loop(xs, false, [])
+      end
+
+    fun applyPhiTy'(phi as PHI phi', ty) =
+      let fun doTy ty =
+	    case derefTy ty
+	     of VAR _ => NONE
+	      | REC record =>
+		let val RECORD{fields, subst} = derefRecord record
+		in
+		  case applyPhiList(phi, doField, fields)
+		   of NONE => NONE
+		    | SOME fields => SOME(REC(RECORD{fields = fields, subst = subst}))
+		end
+	      | CONS(tys, tyname) =>
+		case Util.bound(phi', tyname)
+		 of NONE =>
+		    (case applyPhiList(phi, doTy, tys)
+		      of NONE => NONE
+		       | SOME tys => SOME(CONS(tys, tyname)))
+		  | SOME theta =>
+		    let val tys = case applyPhiList(phi, doTy, tys)
+				   of NONE => tys
+				    | SOME tys => tys
+		    in
+		      SOME(applyTyfcn(theta, tys))
+		    end
+	  and doField(lab, ty) =
+	      case doTy ty
+	       of NONE => NONE
+		| SOME ty => SOME(lab, ty)
+      in
+	doTy ty
+      end
+
+    fun applyPhiTy(phi, ty) =
+      case applyPhiTy'(phi, ty)
+       of NONE => ty
+	| SOME ty => ty
+
+    fun applyPhiTyfcn(phi, tyfcn) =
+      let fun mkvar i = RIGID(Int.toString i)
+	  val bvars = List.tabulate(tyfcnArity tyfcn, mkvar)
+      in
+	lambda(bvars, applyPhiTy(phi, applyTyfcn(tyfcn, map VAR bvars)))
+      end
+
+    fun applyPhiTyscheme(phi, tyscheme) =
+      let val (_, ty) = instFree(tyscheme, 0)
+      in
+	genLimit(applyPhiTy(phi, ty), 0)
+      end
+
   end

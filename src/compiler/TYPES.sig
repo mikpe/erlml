@@ -104,4 +104,11 @@ signature TYPES =
     val instFree	: tyscheme * level -> tyvar list * ty
     val instRigid	: tyscheme -> tyvar list * ty
 
+    (* TYPE REALISATIONS *)
+
+    datatype phi	= PHI of (tyname * tyfcn) list
+    val applyPhiTy	: phi * ty -> ty
+    val applyPhiTyfcn	: phi * tyfcn -> tyfcn
+    val applyPhiTyscheme: phi * tyscheme -> tyscheme
+
   end
