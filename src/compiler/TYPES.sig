@@ -93,6 +93,7 @@ signature TYPES =
     val tyfcnArity	: tyfcn -> int
     val applyTyfcn	: tyfcn * ty list -> ty
     val tyfcnAdmitsEq	: tyfcn -> bool
+    val tyfcnIsTyname	: tyfcn -> tyname option
 
     (* TYPE SCHEMES *)
 

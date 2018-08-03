@@ -291,6 +291,20 @@ structure Types : TYPES =
 	   | _ => false
       end
 
+    fun tyfcnIsTyname(THETA(arity, comb)) =
+      case comb
+       of QUOTE(CONS([], tyname)) => if arity = 0 then SOME tyname else NONE
+	| MKCONS(cs, tyname) =>
+	  let fun loop([], i) = if i = arity then SOME tyname else NONE
+		| loop(c :: cs, i) =
+		  case c
+		   of ARG i' => if i = i' then loop(cs, i + 1) else NONE
+		    | _ => NONE
+	  in
+	    loop(cs, 0)
+	  end
+	| _ => NONE
+
     (* TYPE SCHEMES *)
 
     datatype tyvarscheme = TVS of {eq: bool, ovld: tyname list option, name: string option}
