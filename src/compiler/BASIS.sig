@@ -34,7 +34,7 @@ signature BASIS =
     datatype env      = E of strenv * tyenv * valenv
     and strenv        = SE of (ident, env) Dict.dict
 
-    datatype sigma    = SIG of env (* TODO: add TyNameSet? *)
+    datatype sigma    = SIG of Types.tyname list * env
     datatype sigenv   = G of (ident, sigma) Dict.dict
 
     datatype basis    = BASIS of sigenv * env (* TODO: add FunEnv *)

@@ -34,7 +34,7 @@ structure Basis : BASIS =
     datatype env      = E of strenv * tyenv * valenv
     and strenv        = SE of (ident, env) Dict.dict
 
-    datatype sigma    = SIG of env (* TODO: add TyNameSet? *)
+    datatype sigma    = SIG of Types.tyname list * env
     datatype sigenv   = G of (ident, sigma) Dict.dict
 
     datatype basis    = BASIS of sigenv * env (* TODO: add FunEnv *)
@@ -385,6 +385,9 @@ structure Basis : BASIS =
 	loop([], state)
       end
 
+    fun writeTynames(os, tynames) =
+      writeList(os, fn(os, tyname, ()) => writeTyname(os, tyname), (), tynames)
+
     fun writeFreeTyvar(os, Types.ALPHA{level=level, eq=eq, ovld=ovld, ...}) =
       (TextIO.output1(os, #"{");
        writeInt(os, level);
@@ -393,7 +396,7 @@ structure Basis : BASIS =
        TextIO.output1(os, #" ");
        (case ovld
 	 of NONE => ()
-	  | SOME tynames => writeList(os, fn(os, tyname, ()) => writeTyname(os, tyname), (), tynames));
+	  | SOME tynames => writeTynames(os, tynames));
        TextIO.output1(os, #"}"))
 
     fun writeTyvar(os, tyvar, alphaMap) =
@@ -452,6 +455,12 @@ structure Basis : BASIS =
     fun readRigidTyvar is =
       Types.VAR(Types.RIGID(readIdent is))
 
+    fun readTynames is =
+      let val (tynames, ()) = readList(is, fn(is, ()) => (readTyname is, ()), ())
+      in
+	tynames
+      end
+
     fun readAlpha is =
       let val _ = readChar(is, #"{")
 	  val level = readInt is
@@ -465,11 +474,7 @@ structure Basis : BASIS =
 	  val _ = readChar(is, #" ")
 	  val ovld =
 	      case TextIO.lookahead is
-	       of SOME #"[" =>
-		  let val (tynames, ()) = readList(is, fn(is, ()) => (readTyname is, ()), ())
-		  in
-		    SOME tynames
-		  end
+	       of SOME #"[" => SOME(readTynames is)
 		| _ => NONE
 	  val _ = readChar(is, #"}")
       in
@@ -692,9 +697,10 @@ structure Basis : BASIS =
 
     (* I/O of sigenv *)
 
-    fun writeSigenvMapping(sigid, SIG env, os) =
+    fun writeSigenvMapping(sigid, SIG(tynames, env), os) =
       (TextIO.output1(os, #"{");
        writeIdent(os, sigid);
+       writeTynames(os, tynames);
        writeEnv(os, env);
        TextIO.output1(os, #"}");
        os)
@@ -702,10 +708,11 @@ structure Basis : BASIS =
     fun readSigenvMapping(is, dict) =
       let val _ = readChar(is, #"{")
 	  val sigid = readIdent is
+	  val tynames = readTynames is
 	  val env = readEnv is
 	  val _ = readChar(is, #"}")
       in
-	Dict.insert(dict, sigid, SIG env)
+	Dict.insert(dict, sigid, SIG(tynames, env))
       end
 
     fun writeSigenv(os, G dict) =

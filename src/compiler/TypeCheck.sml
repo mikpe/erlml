@@ -951,7 +951,7 @@ structure TypeCheck : TYPE_CHECK =
 	    E
 	  end
 	| Absyn.SIGIDsigexp sigid => (* 63 *)
-	  let val Basis.SIG E = lookupSigId(B, sigid)
+	  let val Basis.SIG(_, E) = lookupSigId(B, sigid)
 	      (* TODO: rename tynames? *)
 	  in
 	    E
@@ -962,7 +962,7 @@ structure TypeCheck : TYPE_CHECK =
       let val E = elabSigExpE(B, sigexp)
 	  (* TODO: bind tynames? *)
       in
-	Basis.SIG E
+	Basis.SIG([], E)
       end
 
     (*
@@ -998,7 +998,7 @@ structure TypeCheck : TYPE_CHECK =
 	  let val E = elabStrExp(B, strexp)
 	      val sigma = elabSigExpSigma(B, sigexp)
 	      (* FIXME: implement "sigma >= E' < E" side-condition *)
-	      val Basis.SIG E'' = sigma
+	      val Basis.SIG(_, E'') = sigma (* TODO: do sth with T? *)
 	      val _ = refOptEnv := SOME E''
 	  in
 	    E''
@@ -1007,7 +1007,7 @@ structure TypeCheck : TYPE_CHECK =
 	  let val E = elabStrExp(B, strexp)
 	      val sigma = elabSigExpSigma(B, sigexp)
 	      (* FIXME: implement "sigma >= E' < E" and "T' & (T of B) = 0" side-conditions *)
-	      val Basis.SIG E'' = sigma
+	      val Basis.SIG(_, E'') = sigma (* TODO: do sth with T? *)
 	      val _ = refOptEnv := SOME E''
 	  in
 	    E''
