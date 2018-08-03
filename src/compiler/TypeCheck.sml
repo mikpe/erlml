@@ -958,11 +958,23 @@ structure TypeCheck : TYPE_CHECK =
 	  end
 	| Absyn.WHEREsigexp _ => nyi "where <sigexp" (* 64 *)
 
-    fun elabSigExpSigma(B, sigexp) = (* B |- sigexp => sigma *) (* 65 *)
-      let val E = elabSigExpE(B, sigexp)
-	  (* TODO: bind tynames? *)
+    fun tynamesENotInTofC(Basis.E(_, Basis.TE dict, _), TofC) =
+      let fun collect(_, Basis.TYSTR(tyfcn, _), T) =
+	    case Types.tyfcnIsTyname tyfcn
+	     of NONE => T
+	      | SOME tyname =>
+		if Types.tynameInTofC(tyname, TofC) then T
+		else tyname :: T
       in
-	Basis.SIG([], E)
+	Dict.fold(collect, [], dict)
+      end
+
+    fun elabSigExpSigma(B, sigexp) = (* B |- sigexp => sigma *) (* 65 *)
+      let val TofC = Types.getTofC()
+	  val E = elabSigExpE(B, sigexp)
+	  val T = tynamesENotInTofC(E, TofC)
+      in
+	Basis.SIG(T, E)
       end
 
     (*
