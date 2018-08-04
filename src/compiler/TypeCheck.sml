@@ -873,6 +873,152 @@ structure TypeCheck : TYPE_CHECK =
       List.foldl (elabExDesc' C) Basis.emptyVE conbind
 
     (*
+     * 5.2 Realisations and 5.3 Signature Instantiation
+     *)
+
+    fun mkPhi(Basis.SIG(T1, E1), E) = (* find phi making E an instance of Sigma *)
+      let val Basis.E(_, Basis.TE TE, _) = E
+	  fun makeBinding tyname =
+	    let val Types.TYNAME{tycon, arity, eq, ...} = tyname
+	    in
+	      case Dict.find(TE, tycon)
+	       of NONE => unboundTyCon([], tycon)
+		| SOME(Basis.TYSTR(tyfcn, _)) =>
+		  let val _ = if Types.tyfcnArity tyfcn = arity then ()
+			      else error("tycon " ^ tycon ^ " wrong arity")
+		      val _ = if !eq = Types.ALWAYS then
+				if Types.tyfcnAdmitsEq tyfcn then ()
+				else error("tycon " ^ tycon ^ " requires equality")
+			      else ()
+		  in
+		    (tyname, tyfcn)
+		  end
+	    end
+      in
+	Types.PHI(List.map makeBinding T1)
+      end
+
+    fun applyPhiVE(phi, Basis.VE dict) =
+      let fun apply(vid, (sigma, is), Basis.VE VE) =
+	    Basis.VE(Dict.insert(VE, vid, (Types.applyPhiTyscheme(phi, sigma), is)))
+      in
+	Dict.fold(apply, Basis.emptyVE, dict)
+      end
+
+    fun applyPhiTE(phi, Basis.TE dict) =
+      let fun apply(tycon, Basis.TYSTR(tyfcn, VE), Basis.TE TE) =
+	    Basis.TE(Dict.insert(TE, tycon, Basis.TYSTR(Types.applyPhiTyfcn(phi, tyfcn), applyPhiVE(phi, VE))))
+      in
+	Dict.fold(apply, Basis.emptyTE, dict)
+      end
+
+    fun applyPhiE(phi, Basis.E(SE, TE, VE)) =
+      Basis.E(applyPhiSE(phi, SE), applyPhiTE(phi, TE), applyPhiVE(phi, VE))
+
+    and applyPhiSE(phi, Basis.SE dict) =
+      let fun apply(strid, E, Basis.SE SE) =
+	    Basis.SE(Dict.insert(SE, strid, applyPhiE(phi, E)))
+      in
+	Dict.fold(apply, Basis.emptySE, dict)
+      end
+
+    fun applyPhiSigma(phi, Basis.SIG(_, E)) =
+      applyPhiE(phi, E)
+
+    (*
+     * 5.5 Enrichment
+     *)
+
+    fun enrichesTyscheme(sigma1, sigma2) = (* sigma1 > sigma2 *)
+      let val (_, tau2) = Types.instRigid sigma2
+	  val (_, tau1) = Types.instFree(sigma1, 0)
+      in
+	Unify.unify(tau1, tau2)
+      end
+
+    fun enrichesVE(Basis.VE VE1, Basis.VE VE2) =
+      let fun enriches(vid, (sigma2, is2), ()) =
+	    case Dict.find(VE1, vid)
+	     of NONE => unboundVid([], vid)
+	      | SOME(sigma1, is1) =>
+		if is2 = Basis.VAL orelse is2 = is1 then enrichesTyscheme(sigma1, sigma2)
+		else error("vid " ^ vid ^ " has mismatching identifier statuses")
+      in
+	Dict.fold(enriches, (), VE2)
+      end
+
+    fun tyfcnEqual(tyfcn1, tyfcn2) = (* TODO: reimplement in Types.sml w/o unification *)
+      let val arity1 = Types.tyfcnArity tyfcn1
+      in
+	if arity1 = Types.tyfcnArity tyfcn2 then
+	  let fun mkarg i = Types.VAR(Types.RIGID(Int.toString i))
+	      val args = List.tabulate(arity1, mkarg)
+	  in
+	    Unify.unify(Types.applyTyfcn(tyfcn1, args), Types.applyTyfcn(tyfcn2, args))
+	  end
+	else error("mismatching type function arities")
+      end
+
+    fun tyschemeEqual(sigma1, sigma2) = (* sigma1 = sigma2 *) (* TODO: move to Types.sml *)
+      (* FIXME: fails to match "datatype 'a t = T of 'a" with "datatype 'b t = T of 'b" *)
+      let val (_, tau1) = Types.instRigid sigma1
+	  val (_, tau2) = Types.instRigid sigma2
+      in
+	Unify.unify(tau1, tau2)
+      end
+
+    fun enrichesTystr(Basis.TYSTR(tyfcn1, Basis.VE VE1), Basis.TYSTR(tyfcn2, Basis.VE VE2)) =
+      let val _ = tyfcnEqual(tyfcn1, tyfcn2)
+	  fun check(vid, (sigma2, is2), VE1) =
+	    case Dict.find(VE1, vid)
+	     of NONE => unboundVid([], vid)
+	      | SOME(sigma1, is1) =>
+		if is1 = is2 then
+		  let val _ = tyschemeEqual(sigma1, sigma2)
+		  in
+		    Dict.delete(VE1, vid)
+		  end
+		else error("vid " ^ vid ^ " has mismatching identifier statuses")
+      in
+	if Dict.isEmpty VE2 then ()
+	else if Dict.isEmpty(Dict.fold(check, VE1, VE2)) then ()
+	else error("mismatching sets of data constructors")
+      end
+
+    fun enrichesTE(Basis.TE TE1, Basis.TE TE2) =
+      let fun enriches(tycon, tystr2, ()) =
+	    case Dict.find(TE1, tycon)
+	     of NONE => unboundTyCon([], tycon)
+	      | SOME tystr1 => enrichesTystr(tystr1, tystr2)
+      in
+	Dict.fold(enriches, (), TE2)
+      end
+
+    fun enrichesE(Basis.E(SE1, TE1, VE1), Basis.E(SE2, TE2, VE2)) =
+      (enrichesSE(SE1, SE2); enrichesTE(TE1, TE2); enrichesVE(VE1, VE2))
+
+    and enrichesSE(Basis.SE SE1, Basis.SE SE2) =
+      let fun enriches(strid, E2, ()) =
+	    case Dict.find(SE1, strid)
+	     of NONE => unboundStrId([], strid)
+	      | SOME E1 => enrichesE(E1, E2)
+      in
+	Dict.fold(enriches, (), SE2)
+      end
+
+    (*
+     * 5.6 Signature Matching
+     *)
+
+    fun match(Sigma, E) = (* Sigma >= E' < E *)
+      let val phi = mkPhi(Sigma, E)
+	  val E' = applyPhiSigma(phi, Sigma)
+	  val _ = enrichesE(E, E')
+      in
+	E'
+      end
+
+    (*
      * Structure Descriptions
      *)
 
@@ -1008,12 +1154,11 @@ structure TypeCheck : TYPE_CHECK =
 	  end
 	| Absyn.TRANSPARENTstrexp(strexp, sigexp, refOptEnv) => (* 52 *)
 	  let val E = elabStrExp(B, strexp)
-	      val sigma = elabSigExpSigma(B, sigexp)
-	      (* FIXME: implement "sigma >= E' < E" side-condition *)
-	      val Basis.SIG(_, E'') = sigma (* TODO: do sth with T? *)
-	      val _ = refOptEnv := SOME E''
+	      val Sigma = elabSigExpSigma(B, sigexp)
+	      val E' = match(Sigma, E)
+	      val _ = refOptEnv := SOME E'
 	  in
-	    E''
+	    E'
 	  end
 	| Absyn.OPAQUEstrexp(strexp, sigexp, refOptEnv) => (* 53 *)
 	  let val E = elabStrExp(B, strexp)
